@@ -4,6 +4,7 @@ import psycopg2
 from datetime import datetime, date, time, timedelta
 import logging
 import os
+import re # Добавлен импорт re
 
 # Настройка логирования
 logging.basicConfig(
@@ -19,8 +20,8 @@ TOKEN = os.environ.get('TOKEN', '7991006616:AAEuHwhqbFyMVXTVy56ocv22JWZELf5kM7o'
 ADMIN_IDS = ['277399219'] # Должен быть список, даже с одним ID
 # Названия уроков (ОБНОВЛЕНО согласно списку папок пользователя)
 LESSON_TITLES = [
-    "1 сабақ Орталық Азия және Ұлы Дала",
-    "2 сабақ Қазақстан  территориясындағы тас ,қола және темір дәуірлері",
+    "1 сабақ. Орталық Азия және Ұлы Дала",
+    "2 сабақ. Қазақстан  территориясындағы тас ,қола және темір дәуірлері",
     "3 сабақ. Қазақстан территориясындағы алғашқы тайпалық одақтар мен ертедегі мемлекеттер",
     "4 сабақ. Ерте орта ғасырлардағы Қазақстан  тарихы",
     "5 сабақ. VI-IX ғасырлардағы Қазақстан  мәдениеті",
@@ -29,7 +30,7 @@ LESSON_TITLES = [
     "8 сабақ. Кейінгі орта ғасырлар тарихы.(XIII-XVII ғасырлар)",
     "9 сабақ. XIII-XV ғасырдың бірінші жартысындағы мемлекеттердің саяси құрылымы, экономикасы және мәдениеті",
     "10 сабақ. Біртұтас Қазақ мемлекетінің құрылуы",
-    "11 сабақ.XV-XVII ғасырлардағы Қазақ хандығының әлеуметтік-экономикалық дамуы және мәдениеті",
+    "11 сабақ. XV-XVII ғасырлардағы Қазақ хандығының әлеуметтік-экономикалық дамуы және мәдениеті",
     "12 сабақ. Қазақ - жоңғар соғыстары",
     "13 сабақ. XVIII ғасырдағы Қазақ хандығы",
     "14 сабақ. XVIII ғасырдағы Қазақстан  мәдениеті",
@@ -63,6 +64,16 @@ cur = conn.cursor()
 
 # Добавляю глобальную переменную для хранения file_id видео после первой отправки
 VIDEO_FILE_ID = None
+
+# Вспомогательная функция для извлечения числового префикса из имени файла
+def extract_number_prefix(filename):
+    # Ищем одну или более цифр в начале имени файла, возможно, с пробелами до них
+    match = re.match(r"^\\s*(\\d+)", filename)
+    if match:
+        return int(match.group(1))
+    # Если числовой префикс не найден, файл будет отсортирован в конец
+    # или по алфавиту после файлов с префиксами, в зависимости от вторичного ключа сортировки
+    return float('inf')
 
 # Функция для загрузки file_id из базы данных
 def load_video_file_id():
@@ -101,6 +112,27 @@ def save_video_file_id(file_id):
     except Exception as e:
         logger.error(f"Error saving video file_id to database: {e}")
         conn.rollback()
+
+# Новая вспомогательная функция для создания клавиатуры уроков
+def create_lesson_keyboard():
+    keyboard_lessons = []
+    if not LESSON_TITLES:
+        return InlineKeyboardMarkup(keyboard_lessons) # Возвращаем пустую клавиатуру, если нет названий
+
+    # Находим максимальную длину названия урока
+    max_len = 0
+    for title in LESSON_TITLES:
+        if len(title) > max_len:
+            max_len = len(title)
+    
+    # Создаем кнопки, дополняя короткие названия пробелами
+    for i, title in enumerate(LESSON_TITLES, 1):
+        # Используем ljust для выравнивания по левому краю, добавляя пробелы справа
+        # Небольшой отступ для красоты, если нужно, или просто max_len
+        formatted_title = title.ljust(max_len) 
+        keyboard_lessons.append([InlineKeyboardButton(formatted_title, callback_data=f'lesson_{i}')])
+    
+    return InlineKeyboardMarkup(keyboard_lessons)
 
 # Обработчик команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -142,16 +174,20 @@ async def next_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
             protect_content=True
         )
     
-    # Сразу отправляем текст об авторе с кнопкой "Старт"
+    # Сразу отправляем текст об авторе с кнопкой "start"
     keyboard = [[InlineKeyboardButton("start", callback_data='start')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
+    author_text = (
+        "Тәжен Нұрсұлтан Шәутенұлы\n\n"
+        "Қырық жылға жуық еңбек өтілі бар Педагог-шебер, ҚР \"Білім беру ісінің үздігі\", "
+        "\"Ы. Алтынсарин төсбелгісінің\" иегері, Қазақстан тарихы пәні бойынша "
+        "бірнеше әдістемелік құралдардың авторы."
+    )
+    
     await context.bot.send_message(
         chat_id=query.from_user.id,
-        text="Тәжен Нұрсұлтан Шәутенұлы\n"
-             "Қырық жылға жуық еңбек өтілі бар Педагог-шебер, ҚР \"Білім беру ісінің үздігі\", "
-             "\"Ы. Алтынсарин төсбелгісінің\" иегері, Қазақстан тарихы пәні бойынша "
-             "бірнеше әдістемелік құралдардың авторы.",
+        text=author_text,
         reply_markup=reply_markup,
         protect_content=True
     )
@@ -266,12 +302,8 @@ async def handle_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if expiry_dt > datetime.now():
                 logger.info(f"User {user_id} ('{user_name}') already has approved status with valid expiry date.")
                 
-                # Формируем клавиатуру с уроками
-                keyboard_lessons = []
-                for i, title in enumerate(LESSON_TITLES, 1):
-                    keyboard_lessons.append([InlineKeyboardButton(title, callback_data=f'lesson_{i}')])
-                
-                reply_markup = InlineKeyboardMarkup(keyboard_lessons)
+                # Формируем клавиатуру с уроками, используя новую функцию
+                reply_markup = create_lesson_keyboard() # ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ
                 
                 # Отправляем сообщение о наличии доступа
                 await update.message.reply_text(
@@ -438,11 +470,8 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
             conn.commit()
             logger.info(f"User {user_id} ('{user_name}') approved.")
 
-            keyboard_lessons = []
-            for i, title in enumerate(LESSON_TITLES, 1):
-                keyboard_lessons.append([InlineKeyboardButton(title, callback_data=f'lesson_{i}')])
-            
-            reply_markup_lessons = InlineKeyboardMarkup(keyboard_lessons)
+            # Используем новую функцию для создания клавиатуры
+            reply_markup_lessons = create_lesson_keyboard() # ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ
             
             await context.bot.send_message(
                 chat_id=user_id,
@@ -524,7 +553,7 @@ async def select_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     lesson_id_str = query.data.split('_')[1]
-    lesson_index = int(lesson_id_str) - 1 # Для доступа к списку LESSON_TITLES
+    lesson_index = int(lesson_id_str) - 1 # Для доступа к списку LESSON_TITLES (0-based)
 
     # Немедленно отвечаем на callback_query, чтобы избежать таймаута
     await query.answer()
@@ -551,17 +580,34 @@ async def select_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.warning(f"Could not edit message for user {user_id} in select_lesson after denied access: {e_edit}")
             return
 
-        logger.info(f"User {user_id} (status: approved) selected lesson '{lesson_title}'.")
+        logger.info(f"User {user_id} (status: approved) selected lesson '{lesson_title}' (index: {lesson_index}).")
         
         lesson_folder_path = os.path.join("lessons", lesson_title)
         logger.info(f"Looking for lesson files in: {lesson_folder_path}")
 
         if os.path.isdir(lesson_folder_path):
-            audio_files = sorted([
+            # Собираем все подходящие аудиофайлы из папки
+            raw_audio_files = [
                 f for f in os.listdir(lesson_folder_path) 
                 if os.path.isfile(os.path.join(lesson_folder_path, f)) and 
                    f.lower().endswith(('.mp3', '.m4a', '.ogg', '.wav', '.opus'))
-            ])
+            ]
+
+            # Индексы уроков (0-based), для которых нужна специальная сортировка
+            # Номера уроков: 5, 7, 10, 12, 21, 25
+            problematic_lesson_indices = [4, 6, 9, 11, 20, 24] 
+
+            audio_files_sorted = []
+            if lesson_index in problematic_lesson_indices:
+                logger.info(f"Applying special numerical prefix sorting for lesson: '{lesson_title}'")
+                # Сортируем по числовому префиксу, затем по имени файла для стабильности
+                audio_files_sorted = sorted(raw_audio_files, key=lambda f: (extract_number_prefix(f), f))
+            else:
+                logger.info(f"Applying default alphabetical sorting for lesson: '{lesson_title}'")
+                audio_files_sorted = sorted(raw_audio_files)
+            
+            # Переименовываем audio_files_sorted в audio_files для дальнейшего использования
+            audio_files = audio_files_sorted
 
             if audio_files:
                 await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағының материалдары жіберілуде...", protect_content=True) # Изменено с query.message.reply_text
@@ -615,11 +661,8 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
         logger.info(f"User {user_id} approved via legacy /approve.")
 
-        keyboard_legacy_lessons = []
-        for i, title in enumerate(LESSON_TITLES, 1):
-            keyboard_legacy_lessons.append([InlineKeyboardButton(title, callback_data=f'lesson_{i}')])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard_legacy_lessons)
+        # Используем новую функцию для создания клавиатуры
+        reply_markup = create_lesson_keyboard() # ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ
         
         await context.bot.send_message(
             chat_id=user_id,
