@@ -104,12 +104,56 @@ def save_video_file_id(file_id):
 
 # Обработчик команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("Старт", callback_data='start')]]
+    keyboard = [[InlineKeyboardButton("Далее", callback_data='next')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
         "\"Тарихшы Нұрсұлтан\" Telegram каналына қош келдіңіз! 📚",
-        reply_markup=reply_markup
+        reply_markup=reply_markup,
+        protect_content=True
+    )
+
+# Обработчик кнопки "Далее"
+async def next_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    logger.info(f"Next_step handler called with query.data: {query.data}")
+    await query.answer()
+    
+    # Отправляем фотографию
+    try:
+        with open('photo.png', 'rb') as photo_file:
+            await context.bot.send_photo(
+                chat_id=query.from_user.id,
+                photo=photo_file,
+                protect_content=True
+            )
+    except FileNotFoundError:
+        logger.error("Photo file not found: photo.png")
+        await context.bot.send_message(
+            chat_id=query.from_user.id,
+            text="Фото файлы табылмады. Әкімшіге хабарласыңыз.",
+            protect_content=True
+        )
+    except Exception as e:
+        logger.error(f"Error sending photo in next_step handler: {e}")
+        await context.bot.send_message(
+            chat_id=query.from_user.id,
+            text="Фотоны жіберу кезінде қате орын алды.",
+            protect_content=True
+        )
+    
+    # Сразу отправляем текст об авторе с кнопкой "Старт"
+    keyboard = [[InlineKeyboardButton("Старт", callback_data='start')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await context.bot.send_message(
+        chat_id=query.from_user.id,
+        text="Тәжен Нұрсұлтан Шәутенұлы\n"
+             "Қырық жылға жуық еңбек өтілі бар Педагог-шебер, ҚР \"Білім беру ісінің үздігі\", "
+             "\"Ы. Алтынсарин төсбелгісінің\" иегері, Қазақстан тарихы пәні бойынша "
+             "бірнеше әдістемелік құралдардың авторы.",
+        reply_markup=reply_markup,
+        protect_content=True
     )
 
 # Обработчик кнопки "Старт"
@@ -128,24 +172,28 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Если у нас уже есть file_id от предыдущей отправки, используем его
             if VIDEO_FILE_ID:
                 logger.info(f"Using cached video file_id: {VIDEO_FILE_ID}")
-                await query.message.reply_video(
+                await context.bot.send_video(
+                    chat_id=query.from_user.id,
                     video=VIDEO_FILE_ID,
                     caption=None,  # Без подписи
                     reply_markup=reply_markup,
-                    read_timeout=60,  # Увеличенный таймаут
-                    write_timeout=60,  # Увеличенный таймаут
-                    connect_timeout=60  # Увеличенный таймаут
+                    read_timeout=120,  # Увеличенный таймаут
+                    write_timeout=120,  # Увеличенный таймаут
+                    connect_timeout=120,  # Увеличенный таймаут
+                    protect_content=True
                 )
             else:
                 # Отправляем видео с диска и сохраняем file_id для будущего использования
                 with open(video_path, 'rb') as video_file:
-                    message = await query.message.reply_video(
+                    message = await context.bot.send_video(
+                        chat_id=query.from_user.id,
                         video=video_file,
                         caption=None,  # Без подписи
                         reply_markup=reply_markup,
-                        read_timeout=60,  # Увеличенный таймаут
-                        write_timeout=60,  # Увеличенный таймаут
-                        connect_timeout=60  # Увеличенный таймаут
+                        read_timeout=120,  # Увеличенный таймаут
+                        write_timeout=120,  # Увеличенный таймаут
+                        connect_timeout=120,  # Увеличенный таймаут
+                        protect_content=True
                     )
                     # Сохраняем file_id для будущего использования
                     VIDEO_FILE_ID = message.video.file_id
@@ -154,16 +202,20 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     save_video_file_id(VIDEO_FILE_ID)
         except FileNotFoundError:
             logger.error(f"Video file not found: {video_path}")
-            await query.message.reply_text(
-                "Видео файлы табылмады. Әкімшіге хабарласыңыз.",
-                reply_markup=reply_markup
+            await context.bot.send_message(
+                chat_id=query.from_user.id,
+                text="Видео файлы табылмады. Әкімшіге хабарласыңыз.",
+                reply_markup=reply_markup,
+                protect_content=True
             )
         except Exception as e:
             logger.error(f"Error sending video in button handler: {e}")
             # В случае ошибки при отправке видео, попробуем альтернативный подход
-            await query.message.reply_text(
-                "Видеоны жіберу кезінде қате орын алды. Сізге бәрібір жалғастыруға мүмкіндік береміз.",
-                reply_markup=reply_markup
+            await context.bot.send_message(
+                chat_id=query.from_user.id,
+                text="Видеоны жіберу кезінде қате орын алды. Сізге бәрібір жалғастыруға мүмкіндік береміз.",
+                reply_markup=reply_markup,
+                protect_content=True
             )
 
 # Обработчик кнопки "Сабақтарға қол жеткізгім келеді!"
@@ -183,11 +235,13 @@ async def get_access(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Осы төлемді төлеп, каналға қосылыңыз.\n\n"
             "Каналға қосылу сізге 3 ай бойы Тәжен Нұрсұлтанның Қазақстан тарихы пәнінен "
             "124 тақырыпты қамтитын авторлық аудио сабақтарын тыңдауға мүмкіндік береді!",
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
+            protect_content=True
         )
         # Сообщение сразу после нажатия кнопки
         await query.message.reply_text(
-            "Чекті жіберіңіз және қосылуды күтіңіз!"
+            "Чекті жіберіңіз және қосылуды күтіңіз!",
+            protect_content=True
         )
 
 # Обработчик отправки чека
@@ -208,11 +262,11 @@ async def handle_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except psycopg2.Error as e:
         logger.error(f"Database error in handle_payment for user {user_id} ('{user_name}'): {e}")
         conn.rollback()
-        await update.message.reply_text("Чекті сақтау кезінде дерекқор қатесі орын алды. Әкімшіге хабарласыңыз.")
+        await update.message.reply_text("Чекті сақтау кезінде дерекқор қатесі орын алды. Әкімшіге хабарласыңыз.", protect_content=True)
         return
     except Exception as e:
         logger.error(f"Unexpected error in handle_payment (DB part) for user {user_id} ('{user_name}'): {e}")
-        await update.message.reply_text("Чекті өңдеу кезінде белгісіз қате орын алды.")
+        await update.message.reply_text("Чекті өңдеу кезінде белгісіз қате орын алды.", protect_content=True)
         return
 
     # Отправляем уведомление администратору
@@ -230,13 +284,15 @@ async def handle_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     chat_id=admin_user_id,
                     photo=update.message.photo[-1].file_id,
                     caption=f"Жаңа чек: ID: {user_id}, Аты: {user_name}",
-                    reply_markup=reply_markup
+                    reply_markup=reply_markup,
+                    protect_content=True
                 )
             else: # Assuming text is a link or description of payment
                 await context.bot.send_message(
                     chat_id=admin_user_id,
-                    text=f"Жаңа чек: ID: {user_id}, Аты: {user_name}\\nЧек мәліметі: {update.message.text}",
-                    reply_markup=reply_markup
+                    text=f"Жаңа чек: ID: {user_id}, Аты: {user_name}\nЧек мәліметі: {update.message.text}",
+                    reply_markup=reply_markup,
+                    protect_content=True
                 )
             logger.info(f"Payment notification sent to admin {admin_user_id} for user {user_id}.")
         except Exception as e_notify:
@@ -245,12 +301,12 @@ async def handle_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Сообщение пользователю отправляется независимо от успеха уведомления всех админов,
     # так как его чек уже обработан и сохранен в БД.
-    await update.message.reply_text("Чек қабылданды! Төлемді растауды күтіңіз.")
+    await update.message.reply_text("Чек қабылданды! Төлемді растауды күтіңіз.", protect_content=True)
 
 # Обработчик команды /admin
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.message.from_user.id) not in ADMIN_IDS:
-        await update.message.reply_text("Бұл команда тек әкімшіге арналған.")
+        await update.message.reply_text("Бұл команда тек әкімшіге арналған.", protect_content=True)
         return
 
     logger.info("Admin command: Displaying filter buttons.")
@@ -260,7 +316,7 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Бас тартылғандар (Rejected)", callback_data='list_rejected')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Пайдаланушылар тізімін таңдаңыз:", reply_markup=reply_markup)
+    await update.message.reply_text("Пайдаланушылар тізімін таңдаңыз:", reply_markup=reply_markup, protect_content=True)
 
 # НОВЫЙ обработчик для отображения списков пользователей по статусу
 async def show_user_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -281,11 +337,11 @@ async def show_user_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not users:
             logger.info(f"No users found with status '{status_to_fetch}'.")
-            await query.edit_message_text(text=f"{message_text}\n{no_users_text}")
+            await query.edit_message_text(text=f"{message_text}\n{no_users_text}", protect_content=True)
             return
 
         logger.info(f"Found {len(users)} users with status '{status_to_fetch}'.")
-        await query.edit_message_text(text=message_text) # Сначала заголовок списка
+        await query.edit_message_text(text=message_text, protect_content=True) # Сначала заголовок списка
 
         for user_id, username, expiry_date in users:
             users_found = True
@@ -306,18 +362,18 @@ async def show_user_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 action_buttons.append(InlineKeyboardButton("Растау", callback_data=f'approve_{user_id}'))
             
             reply_markup = InlineKeyboardMarkup([action_buttons]) if action_buttons else None
-            await context.bot.send_message(chat_id=query.from_user.id, text=user_info, reply_markup=reply_markup)
+            await context.bot.send_message(chat_id=query.from_user.id, text=user_info, reply_markup=reply_markup, protect_content=True)
 
         if not users_found: # Это условие теперь избыточно из-за проверки if not users выше, но оставлю для ясности
-            await context.bot.send_message(chat_id=query.from_user.id, text=no_users_text)
+            await context.bot.send_message(chat_id=query.from_user.id, text=no_users_text, protect_content=True)
             
     except psycopg2.Error as e:
         logger.error(f"Database error in show_user_list (status: {status_to_fetch}): {e}")
-        await context.bot.send_message(chat_id=query.from_user.id, text=f"База данных қатесі ({status_to_fetch} тізімі). Әкімшіге хабарласыңыз.")
+        await context.bot.send_message(chat_id=query.from_user.id, text=f"База данных қатесі ({status_to_fetch} тізімі). Әкімшіге хабарласыңыз.", protect_content=True)
         conn.rollback()
     except Exception as e:
         logger.error(f"Unexpected error in show_user_list (status: {status_to_fetch}): {e}")
-        await context.bot.send_message(chat_id=query.from_user.id, text=f"Белгісіз қате ({status_to_fetch} тізімі).")
+        await context.bot.send_message(chat_id=query.from_user.id, text=f"Белгісіз қате ({status_to_fetch} тізімі).", protect_content=True)
 
 # Обработчик кнопок аппрува и реджекта
 async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -359,14 +415,15 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
             
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"✅ Төлем расталды! Сабақтарға қол жеткізу ашылды.\\nМерзімі: {expiry_date.strftime('%d.%m.%Y')} дейін.\\nТөмендегі сабақтарды таңдаңыз:",
-                reply_markup=reply_markup_lessons
+                text=f"✅ Төлем расталды! Сабақтарға қол жеткізу ашылды.\nМерзімі: {expiry_date.strftime('%d.%m.%Y')} дейін.\nТөмендегі сабақтарды таңдаңыз:",
+                reply_markup=reply_markup_lessons,
+                protect_content=True
             )
             confirm_text = f"Қол жеткізу {user_name} (ID: {user_id}) үшін ашылды."
             if query.message.caption is not None:
-                await query.edit_message_caption(caption=confirm_text)
+                await query.edit_message_caption(caption=confirm_text, protect_content=True)
             elif query.message.text is not None:
-                await query.edit_message_text(text=confirm_text)
+                await query.edit_message_text(text=confirm_text, protect_content=True)
             else: # Fallback or just remove buttons
                 await query.edit_message_reply_markup(reply_markup=None)
                 logger.info(f"Admin message for user {user_id} (approve) had no text/caption, buttons removed.")
@@ -382,13 +439,14 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
             
             await context.bot.send_message(
                 chat_id=user_id,
-                text="❌ Төлем расталмады. Қайта тексеріп, чекті қайта жіберіңіз."
+                text="❌ Төлем расталмады. Қайта тексеріп, чекті қайта жіберіңіз.",
+                protect_content=True
             )
             reject_text = f"Қол жеткізу {user_name} (ID: {user_id}) үшін жабылды (бас тартылды)."
             if query.message.caption is not None:
-                await query.edit_message_caption(caption=reject_text)
+                await query.edit_message_caption(caption=reject_text, protect_content=True)
             elif query.message.text is not None:
-                await query.edit_message_text(text=reject_text)
+                await query.edit_message_text(text=reject_text, protect_content=True)
             else: # Fallback or just remove buttons
                 await query.edit_message_reply_markup(reply_markup=None)
                 logger.info(f"Admin message for user {user_id} (reject) had no text/caption, buttons removed.")
@@ -404,13 +462,14 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
             
             await context.bot.send_message(
                 chat_id=user_id,
-                text="ℹ️ Сіздің курсқа қол жеткізуіңіз әкімшімен тоқтатылды. Қосымша ақпарат алу үшін әкімшіге хабарласыңыз."
+                text="ℹ️ Сіздің курсқа қол жеткізуіңіз әкімшімен тоқтатылды. Қосымша ақпарат алу үшін әкімшіге хабарласыңыз.",
+                protect_content=True
             )
             revoke_text = f"Пайдаланушы {user_name} (ID: {user_id}) үшін қол жеткізу тоқтатылды. Енді ол күтуде."
             if query.message.caption is not None:
-                await query.edit_message_caption(caption=revoke_text)
+                await query.edit_message_caption(caption=revoke_text, protect_content=True)
             elif query.message.text is not None:
-                await query.edit_message_text(text=revoke_text)
+                await query.edit_message_text(text=revoke_text, protect_content=True)
             else:
                 await query.edit_message_reply_markup(reply_markup=None)
                 logger.info(f"Admin message for user {user_id} (revoke) had no text/caption, buttons removed.")
@@ -419,15 +478,15 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.error(f"Database error in handle_admin_action for user {user_id} ('{user_name}'), action '{action}': {e}")
         conn.rollback()
         try:
-            await query.edit_message_text(text=f"База данных қатесі ({action}). Әкімшіге хабарласыңыз.")
+            await query.edit_message_text(text=f"База данных қатесі ({action}). Әкімшіге хабарласыңыз.", protect_content=True)
         except:
-             await context.bot.send_message(chat_id=query.from_user.id, text=f"База данных қатесі ({action}). Әкімшіге хабарласыңыз.")
+             await context.bot.send_message(chat_id=query.from_user.id, text=f"База данных қатесі ({action}). Әкімшіге хабарласыңыз.", protect_content=True)
     except Exception as e:
         logger.error(f"Unexpected error in handle_admin_action for user {user_id} ('{user_name}'), action '{action}': {e}")
         try:
-            await query.edit_message_text(text=f"Белгісіз қате орын алды ({action}).")
+            await query.edit_message_text(text=f"Белгісіз қате орын алды ({action}).", protect_content=True)
         except:
-            await context.bot.send_message(chat_id=query.from_user.id, text=f"Белгісіз қате орын алды ({action}).")
+            await context.bot.send_message(chat_id=query.from_user.id, text=f"Белгісіз қате орын алды ({action}).", protect_content=True)
 
 # Обработчик выбора урока (пока просто заглушка)
 async def select_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -451,7 +510,8 @@ async def select_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Отправляем сообщение как обычное сообщение, а не через query.answer()
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"'{lesson_title}' таңдауға тырыстыңыз, бірақ курсқа қол жеткізуіңіз жабық."
+                text=f"'{lesson_title}' таңдауға тырыстыңыз, бірақ курсқа қол жеткізуіңіз жабық.",
+                protect_content=True
             )
             try:
                 # Попытка убрать кнопки, если это возможно
@@ -473,7 +533,7 @@ async def select_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
 
             if audio_files:
-                await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағының материалдары жіберілуде...") # Изменено с query.message.reply_text
+                await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағының материалдары жіберілуде...", protect_content=True) # Изменено с query.message.reply_text
                 for audio_file_name in audio_files:
                     audio_file_path = os.path.join(lesson_folder_path, audio_file_name)
                     try:
@@ -482,34 +542,35 @@ async def select_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             await context.bot.send_audio(
                                 chat_id=user_id, 
                                 audio=audio_fp, 
-                                caption=audio_file_name
+                                caption=audio_file_name,
+                                protect_content=True
                             )
                         logger.info(f"Successfully sent {audio_file_name}")
                     except Exception as e_send_audio:
                         logger.error(f"Failed to send audio file {audio_file_path} to user {user_id}: {e_send_audio}")
-                        await context.bot.send_message(chat_id=user_id, text=f"'{audio_file_name}' файлын жіберу кезінде қате орын алды.")
-                await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағының барлық материалдары жіберілді.")
+                        await context.bot.send_message(chat_id=user_id, text=f"'{audio_file_name}' файлын жіберу кезінде қате орын алды.", protect_content=True)
+                await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағының барлық материалдары жіберілді.", protect_content=True)
             else:
                 logger.info(f"No audio files found in {lesson_folder_path}.")
-                await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағы үшін аудио материалдар әзірге жоқ немесе табылмады.") # Изменено с query.message.reply_text
+                await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағы үшін аудио материалдар әзірге жоқ немесе табылмады.", protect_content=True) # Изменено с query.message.reply_text
         else:
             logger.warning(f"Lesson folder not found: {lesson_folder_path}")
-            await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағының материалдары табылмады. Әкімшіге хабарласыңыз.") # Изменено с query.message.reply_text
+            await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағының материалдары табылмады. Әкімшіге хабарласыңыз.", protect_content=True) # Изменено с query.message.reply_text
 
     except psycopg2.Error as e:
         logger.error(f"Database error in select_lesson for user {user_id}, lesson '{lesson_title}': {e}")
         # query.answer() уже был вызван
-        await context.bot.send_message(chat_id=user_id, text="Дерекқор қатесі орын алды. Әкімшіге хабарласыңыз.")
+        await context.bot.send_message(chat_id=user_id, text="Дерекқор қатесі орын алды. Әкімшіге хабарласыңыз.", protect_content=True)
         conn.rollback()
     except Exception as e:
         logger.error(f"Unexpected error in select_lesson for user {user_id}, lesson '{lesson_title}': {e}")
         # query.answer() уже был вызван
-        await context.bot.send_message(chat_id=user_id, text="Белгісіз қате орын алды. Әкімшіге хабарласыңыз.")
+        await context.bot.send_message(chat_id=user_id, text="Белгісіз қате орын алды. Әкімшіге хабарласыңыз.", protect_content=True)
 
 # Обработчик команды /approve (для обратной совместимости)
 async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.message.from_user.id) not in ADMIN_IDS:
-        await update.message.reply_text("Бұл команда тек әкімшіге арналған.")
+        await update.message.reply_text("Бұл команда тек әкімшіге арналған.", protect_content=True)
         return
     try:
         user_id = int(context.args[0])
@@ -532,23 +593,24 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(
             chat_id=user_id,
             text=f"✅ Төлем расталды! Сабақтарға қол жеткізу ашылды (legacy /approve арқылы).\nМерзімі: {expiry_date.strftime('%d.%m.%Y')} дейін.\nТөмендегі сабақтарды таңдаңыз:",
-            reply_markup=reply_markup
+            reply_markup=reply_markup,
+            protect_content=True
         )
-        await update.message.reply_text(f"Қол жеткізу ID: {user_id} үшін ашылды (legacy /approve).")
+        await update.message.reply_text(f"Қол жеткізу ID: {user_id} үшін ашылды (legacy /approve).", protect_content=True)
     except (IndexError, ValueError):
-        await update.message.reply_text("Пайдалану: /approve <user_id>")
+        await update.message.reply_text("Пайдалану: /approve <user_id>", protect_content=True)
     except psycopg2.Error as e:
         logger.error(f"Database error in legacy /approve for user_id {context.args[0] if context.args else 'N/A'}: {e}")
         conn.rollback()
-        await update.message.reply_text("База данных қатесі (/approve). Әкімшіге хабарласыңыз.")
+        await update.message.reply_text("База данных қатесі (/approve). Әкімшіге хабарласыңыз.", protect_content=True)
     except Exception as e:
         logger.error(f"Unexpected error in legacy /approve for user_id {context.args[0] if context.args else 'N/A'}: {e}")
-        await update.message.reply_text("Белгісіз қате орын алды (/approve).")
+        await update.message.reply_text("Белгісіз қате орын алды (/approve).", protect_content=True)
 
 # Обработчик команды /reject (для обратной совместимости)
 async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.message.from_user.id) not in ADMIN_IDS:
-        await update.message.reply_text("Бұл команда тек әкімшіге арналған.")
+        await update.message.reply_text("Бұл команда тек әкімшіге арналған.", protect_content=True)
         return
     try:
         user_id = int(context.args[0])
@@ -562,18 +624,19 @@ async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await context.bot.send_message(
             chat_id=user_id,
-            text="❌ Төлем расталмады (legacy /reject арқылы). Қайта тексеріп, чекті қайта жіберіңіз."
+            text="❌ Төлем расталмады (legacy /reject арқылы). Қайта тексеріп, чекті қайта жіберіңіз.",
+            protect_content=True
         )
-        await update.message.reply_text(f"Қол жеткізу ID: {user_id} үшін жабылды (legacy /reject).")
+        await update.message.reply_text(f"Қол жеткізу ID: {user_id} үшін жабылды (legacy /reject).", protect_content=True)
     except (IndexError, ValueError):
-        await update.message.reply_text("Пайдалану: /reject <user_id>")
+        await update.message.reply_text("Пайдалану: /reject <user_id>", protect_content=True)
     except psycopg2.Error as e:
         logger.error(f"Database error in legacy /reject for user_id {context.args[0] if context.args else 'N/A'}: {e}")
         conn.rollback()
-        await update.message.reply_text("База данных қатесі (/reject). Әкімшіге хабарласыңыз.")
+        await update.message.reply_text("База данных қатесі (/reject). Әкімшіге хабарласыңыз.", protect_content=True)
     except Exception as e:
         logger.error(f"Unexpected error in legacy /reject for user_id {context.args[0] if context.args else 'N/A'}: {e}")
-        await update.message.reply_text("Белгісіз қате орын алды (/reject).")
+        await update.message.reply_text("Белгісіз қате орын алды (/reject).", protect_content=True)
 
 # Основная функция
 def main():
@@ -584,6 +647,7 @@ def main():
         # Создаем приложение и добавляем обработчики
         application = Application.builder().token(TOKEN).build()
         application.add_handler(CommandHandler("start", start))
+        application.add_handler(CallbackQueryHandler(next_step, pattern='next'))
         application.add_handler(CallbackQueryHandler(button, pattern='start'))
         application.add_handler(CallbackQueryHandler(get_access, pattern='get_access'))
         application.add_handler(MessageHandler(filters.PHOTO | filters.TEXT & ~filters.COMMAND, handle_payment))
