@@ -1,7 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 import psycopg2
-from datetime import datetime, timedelta
+from datetime import datetime, date, time, timedelta
 import logging
 import os
 
@@ -258,12 +258,12 @@ async def handle_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Если пользователь найден, статус 'approved' и срок не истек
         if user_data and user_data[0] == 'approved' and user_data[1]:
             # Преобразуем date в datetime, если необходимо
-            expiry_date = user_data[1]
-            if isinstance(expiry_date, datetime.date) and not isinstance(expiry_date, datetime.datetime):
-                expiry_date = datetime.datetime.combine(expiry_date, datetime.time.min)
+            expiry_dt = user_data[1] # Переименовал, чтобы не конфликтовать с импортированным datetime
+            if isinstance(expiry_dt, date) and not isinstance(expiry_dt, datetime):
+                expiry_dt = datetime.combine(expiry_dt, time.min)
             
             # Теперь сравниваем
-            if expiry_date > datetime.now():
+            if expiry_dt > datetime.now():
                 logger.info(f"User {user_id} ('{user_name}') already has approved status with valid expiry date.")
                 
                 # Формируем клавиатуру с уроками
