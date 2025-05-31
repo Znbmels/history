@@ -104,7 +104,7 @@ def save_video_file_id(file_id):
 
 # Обработчик команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton("Далее", callback_data='next')]]
+    keyboard = [[InlineKeyboardButton("әрі қарай", callback_data='next')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
@@ -143,7 +143,7 @@ async def next_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
     # Сразу отправляем текст об авторе с кнопкой "Старт"
-    keyboard = [[InlineKeyboardButton("Старт", callback_data='start')]]
+    keyboard = [[InlineKeyboardButton("start", callback_data='start')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await context.bot.send_message(
@@ -251,6 +251,30 @@ async def handle_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_name = user.full_name
 
     try:
+        # Сначала проверяем текущий статус пользователя
+        cur.execute("SELECT status, expiry_date FROM users WHERE user_id = %s", (user_id,))
+        user_data = cur.fetchone()
+        
+        # Если пользователь найден, статус 'approved' и срок не истек
+        if user_data and user_data[0] == 'approved' and user_data[1] and user_data[1] > datetime.now():
+            logger.info(f"User {user_id} ('{user_name}') already has approved status with valid expiry date.")
+            
+            # Формируем клавиатуру с уроками
+            keyboard_lessons = []
+            for i, title in enumerate(LESSON_TITLES, 1):
+                keyboard_lessons.append([InlineKeyboardButton(title, callback_data=f'lesson_{i}')])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard_lessons)
+            
+            # Отправляем сообщение о наличии доступа
+            await update.message.reply_text(
+                f"Сізде сабақтарға қол жеткізу ашық! Мерзімі: {user_data[1].strftime('%d.%m.%Y')}. Төмендегі сабақтарды таңдаңыз:",
+                reply_markup=reply_markup,
+                protect_content=True
+            )
+            return
+        
+        # Если статус не 'approved' или срок истек, продолжаем обработку как чека
         logger.info(f"Inserting/updating user {user_id} ('{user_name}') with status 'pending' in handle_payment.")
         # Сохраняем данные пользователя в БД
         cur.execute(
