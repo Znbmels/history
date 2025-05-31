@@ -256,23 +256,30 @@ async def handle_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data = cur.fetchone()
         
         # Если пользователь найден, статус 'approved' и срок не истек
-        if user_data and user_data[0] == 'approved' and user_data[1] and user_data[1] > datetime.now():
-            logger.info(f"User {user_id} ('{user_name}') already has approved status with valid expiry date.")
+        if user_data and user_data[0] == 'approved' and user_data[1]:
+            # Преобразуем date в datetime, если необходимо
+            expiry_date = user_data[1]
+            if isinstance(expiry_date, datetime.date) and not isinstance(expiry_date, datetime.datetime):
+                expiry_date = datetime.datetime.combine(expiry_date, datetime.time.min)
             
-            # Формируем клавиатуру с уроками
-            keyboard_lessons = []
-            for i, title in enumerate(LESSON_TITLES, 1):
-                keyboard_lessons.append([InlineKeyboardButton(title, callback_data=f'lesson_{i}')])
-            
-            reply_markup = InlineKeyboardMarkup(keyboard_lessons)
-            
-            # Отправляем сообщение о наличии доступа
-            await update.message.reply_text(
-                f"Сізде сабақтарға қол жеткізу ашық! Мерзімі: {user_data[1].strftime('%d.%m.%Y')}. Төмендегі сабақтарды таңдаңыз:",
-                reply_markup=reply_markup,
-                protect_content=True
-            )
-            return
+            # Теперь сравниваем
+            if expiry_date > datetime.now():
+                logger.info(f"User {user_id} ('{user_name}') already has approved status with valid expiry date.")
+                
+                # Формируем клавиатуру с уроками
+                keyboard_lessons = []
+                for i, title in enumerate(LESSON_TITLES, 1):
+                    keyboard_lessons.append([InlineKeyboardButton(title, callback_data=f'lesson_{i}')])
+                
+                reply_markup = InlineKeyboardMarkup(keyboard_lessons)
+                
+                # Отправляем сообщение о наличии доступа
+                await update.message.reply_text(
+                    f"Сізде сабақтарға қол жеткізу ашық! Мерзімі: {user_data[1].strftime('%d.%m.%Y')}. Төмендегі сабақтарды таңдаңыз:",
+                    reply_markup=reply_markup,
+                    protect_content=True
+                )
+                return
         
         # Если статус не 'approved' или срок истек, продолжаем обработку как чека
         logger.info(f"Inserting/updating user {user_id} ('{user_name}') with status 'pending' in handle_payment.")
