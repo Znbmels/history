@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:14
+    container_name: bot-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: bot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - bot-network
+
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telegram-bot
+    restart: always
+    depends_on:
+      - postgres
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=bot
+      - DB_USER=postgres
+      - DB_PASSWORD=admin
+      - TOKEN=7991006616:AAEuHwhqbFyMVXTVy56ocv22JWZELf5kM7o
+    volumes:
+      - ./lessons:/app/lessons
+      - ./video.mp4:/app/video.mp4
+    networks:
+      - bot-network
+
+networks:
+  bot-network:
+    driver: bridge
+
+volumes:
+  postgres_data: 
