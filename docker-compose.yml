@@ -40,6 +40,7 @@ services:
     volumes:
       - ./lessons:/app/lessons
       - ./video.mp4:/app/video.mp4
+      - ./photo.png:/app/photo.png
     networks:
       - bot-network
     deploy:
