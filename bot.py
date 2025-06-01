@@ -743,18 +743,18 @@ async def select_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.info(f"Applying SPECIAL sorting for problematic lesson: '{lesson_title}' (index {lesson_index})")
                 
                 def get_sort_key_for_problematic(filename):
-                    # Priority 0: "с-ЧИСЛО т" pattern
-                    match_sc_t = re.search(r'с-(\d+)\s*т', filename, re.IGNORECASE)
+                    # Priority 0: "с- ЧИСЛО т" pattern (handles spaces)
+                    match_sc_t = re.search(r'с-\s*(\d+)\s*т', filename, re.IGNORECASE)
                     if match_sc_t:
-                        return (0, int(match_sc_t.group(1)), filename) 
+                        return (0, int(match_sc_t.group(1))) 
 
                     # Priority 1: Leading number prefix (using existing extract_number_prefix)
                     prefix_num = extract_number_prefix(filename)
                     if prefix_num != float('inf'):
-                        return (1, prefix_num, filename)
+                        return (1, prefix_num)
                     
-                    # Priority 2: Fallback to filename for alphabetical sort among non-numbered files
-                    return (2, float('inf'), filename) # ensures these come after numbered, sorted by filename
+                    # Priority 2: Fallback to filename for alphabetical sort (case-insensitive)
+                    return (2, filename.lower())
 
                 audio_files_sorted = sorted(raw_audio_files, key=get_sort_key_for_problematic)
             else:
@@ -940,7 +940,7 @@ def main():
         load_video_file_id()
         
         # Создаем приложение и добавляем обработчики
-        application = Application.builder().token(TOKEN).connect_timeout(30).read_timeout(30).write_timeout(30).build()
+        application = Application.builder().token(TOKEN).connect_timeout(60).read_timeout(60).write_timeout(60).build()
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CallbackQueryHandler(next_step, pattern='next'))
         application.add_handler(CallbackQueryHandler(button, pattern='start'))
