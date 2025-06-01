@@ -391,7 +391,6 @@ async def show_user_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     message_text = f"--- {status_to_fetch.capitalize()} пайдаланушылар ---"
     no_users_text = f"Қазір {status_to_fetch} статусы бар пайдаланушылар жоқ."
-    users_found = False
 
     try:
         conn.rollback() # На всякий случай
@@ -407,7 +406,6 @@ async def show_user_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text=message_text, protect_content=True) # Сначала заголовок списка
 
         for user_id, username, expiry_date in users:
-            users_found = True
             user_info = f"{username} (ID: {user_id})"
             action_buttons = []
 
@@ -427,15 +425,12 @@ async def show_user_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup = InlineKeyboardMarkup([action_buttons]) if action_buttons else None
             await context.bot.send_message(chat_id=query.from_user.id, text=user_info, reply_markup=reply_markup, protect_content=True)
 
-        if not users_found: # Это условие теперь избыточно из-за проверки if not users выше, но оставлю для ясности
-            await context.bot.send_message(chat_id=query.from_user.id, text=no_users_text, protect_content=True)
-            
     except psycopg2.Error as e:
-        logger.error(f"Database error in show_user_list (status: {status_to_fetch}): {e}")
+        logger.error(f"Database error in show_user_list (status: {status_to_fetch}): {e}", exc_info=True)
         await context.bot.send_message(chat_id=query.from_user.id, text=f"База данных қатесі ({status_to_fetch} тізімі). Әкімшіге хабарласыңыз.", protect_content=True)
         conn.rollback()
     except Exception as e:
-        logger.error(f"Unexpected error in show_user_list (status: {status_to_fetch}): {e}")
+        logger.error(f"Unexpected error in show_user_list (status: {status_to_fetch}): {e}", exc_info=True)
         await context.bot.send_message(chat_id=query.from_user.id, text=f"Белгісіз қате ({status_to_fetch} тізімі).", protect_content=True)
 
 # Обработчик кнопок аппрува и реджекта
@@ -719,7 +714,7 @@ def main():
         load_video_file_id()
         
         # Создаем приложение и добавляем обработчики
-        application = Application.builder().token(TOKEN).build()
+        application = Application.builder().token(TOKEN).connect_timeout(30).read_timeout(30).write_timeout(30).build()
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CallbackQueryHandler(next_step, pattern='next'))
         application.add_handler(CallbackQueryHandler(button, pattern='start'))
