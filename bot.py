@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 TOKEN = os.environ.get('TOKEN', '7991006616:AAEuHwhqbFyMVXTVy56ocv22JWZELf5kM7o')
 
 # Telegram ID администратора
-ADMIN_IDS = ['277399219'] # Должен быть список, даже с одним ID
+ADMIN_IDS = ['413221603'] # Должен быть список, даже с одним ID
 # Названия уроков (ОБНОВЛЕНО согласно списку папок пользователя)
 LESSON_TITLES = [
     "1 сабақ. Орталық Азия және Ұлы Дала",
@@ -740,10 +740,26 @@ async def select_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
             problematic_lesson_indices = [4, 6, 9, 11, 20, 24] 
             audio_files_sorted = []
             if lesson_index in problematic_lesson_indices:
-                logger.info(f"Applying special numerical prefix sorting for lesson: '{lesson_title}'")
-                audio_files_sorted = sorted(raw_audio_files, key=lambda f: (extract_number_prefix(f), f))
+                logger.info(f"Applying SPECIAL sorting for problematic lesson: '{lesson_title}' (index {lesson_index})")
+                
+                def get_sort_key_for_problematic(filename):
+                    # Priority 0: "с-ЧИСЛО т" pattern
+                    match_sc_t = re.search(r'с-(\d+)\s*т', filename, re.IGNORECASE)
+                    if match_sc_t:
+                        return (0, int(match_sc_t.group(1)), filename) 
+
+                    # Priority 1: Leading number prefix (using existing extract_number_prefix)
+                    prefix_num = extract_number_prefix(filename)
+                    if prefix_num != float('inf'):
+                        return (1, prefix_num, filename)
+                    
+                    # Priority 2: Fallback to filename for alphabetical sort among non-numbered files
+                    return (2, float('inf'), filename) # ensures these come after numbered, sorted by filename
+
+                audio_files_sorted = sorted(raw_audio_files, key=get_sort_key_for_problematic)
             else:
-                logger.info(f"Applying default alphabetical sorting for lesson: '{lesson_title}'")
+                # Original logic for non-problematic lessons (alphabetical sort as per existing code)
+                logger.info(f"Applying default alphabetical sorting for non-problematic lesson: '{lesson_title}' (index {lesson_index})")
                 audio_files_sorted = sorted(raw_audio_files)
             
             audio_files = audio_files_sorted
