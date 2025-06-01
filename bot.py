@@ -5,6 +5,7 @@ from datetime import datetime, date, time, timedelta
 import logging
 import os
 import re # Добавлен импорт re
+from telegram.error import NetworkError, TelegramError # Добавляем импорт
 
 # Настройка логирования
 logging.basicConfig(
@@ -139,11 +140,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("әрі қарай", callback_data='next')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(
-        "\"Тарихшы Нұрсұлтан\" Telegram каналына қош келдіңіз! 📚",
-        reply_markup=reply_markup,
-        protect_content=True
-    )
+    try:
+        await update.message.reply_text(
+            "\"Тарихшы Нұрсұлтан\" Telegram каналына қош келдіңіз! 📚",
+            reply_markup=reply_markup,
+            protect_content=True
+        )
+    except NetworkError as e:
+        logger.error(f"Network error in start handler sending welcome message: {e}", exc_info=True)
 
 # Обработчик кнопки "Далее"
 async def next_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -161,18 +165,35 @@ async def next_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
     except FileNotFoundError:
         logger.error("Photo file not found: photo.png")
-        await context.bot.send_message(
-            chat_id=query.from_user.id,
-            text="Фото файлы табылмады. Әкімшіге хабарласыңыз.",
-            protect_content=True
-        )
+        try:
+            await context.bot.send_message(
+                chat_id=query.from_user.id,
+                text="Фото файлы табылмады. Әкімшіге хабарласыңыз.",
+                protect_content=True
+            )
+        except NetworkError as e:
+            logger.error(f"Network error in next_step handler sending photo not found error: {e}", exc_info=True)
+    except NetworkError as e:
+        logger.error(f"Network error sending photo in next_step handler: {e}", exc_info=True)
+        # Optionally, inform user if photo sending failed due to network, though it might also fail
+        try:
+            await context.bot.send_message(
+                chat_id=query.from_user.id,
+                text="Фотоны жіберу кезінде желі қатесі орын алды.",
+                protect_content=True
+            )
+        except NetworkError as ne_inner:
+            logger.error(f"Network error in next_step handler sending photo network error message: {ne_inner}", exc_info=True)
     except Exception as e:
-        logger.error(f"Error sending photo in next_step handler: {e}")
-        await context.bot.send_message(
-            chat_id=query.from_user.id,
-            text="Фотоны жіберу кезінде қате орын алды.",
-            protect_content=True
-        )
+        logger.error(f"Error sending photo in next_step handler: {e}", exc_info=True)
+        try:
+            await context.bot.send_message(
+                chat_id=query.from_user.id,
+                text="Фотоны жіберу кезінде қате орын алды.",
+                protect_content=True
+            )
+        except NetworkError as ne_generic_error:
+            logger.error(f"Network error in next_step handler sending generic photo error message: {ne_generic_error}", exc_info=True)
     
     # Сразу отправляем текст об авторе с кнопкой "start"
     keyboard = [[InlineKeyboardButton("start", callback_data='start')]]
@@ -185,12 +206,15 @@ async def next_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "бірнеше әдістемелік құралдардың авторы."
     )
     
-    await context.bot.send_message(
-        chat_id=query.from_user.id,
-        text=author_text,
-        reply_markup=reply_markup,
-        protect_content=True
-    )
+    try:
+        await context.bot.send_message(
+            chat_id=query.from_user.id,
+            text=author_text,
+            reply_markup=reply_markup,
+            protect_content=True
+        )
+    except NetworkError as e:
+        logger.error(f"Network error in next_step handler sending author text: {e}", exc_info=True)
 
 # Обработчик кнопки "Старт"
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -238,21 +262,37 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     save_video_file_id(VIDEO_FILE_ID)
         except FileNotFoundError:
             logger.error(f"Video file not found: {video_path}")
-            await context.bot.send_message(
-                chat_id=query.from_user.id,
-                text="Видео файлы табылмады. Әкімшіге хабарласыңыз.",
-                reply_markup=reply_markup,
-                protect_content=True
-            )
+            try:
+                await context.bot.send_message(
+                    chat_id=query.from_user.id,
+                    text="Видео файлы табылмады. Әкімшіге хабарласыңыз.",
+                    reply_markup=reply_markup,
+                    protect_content=True
+                )
+            except NetworkError as e_fnf:
+                logger.error(f"Network error sending video not found message: {e_fnf}", exc_info=True)
+        except NetworkError as e_net:
+            logger.error(f"Network error sending video in button handler: {e_net}", exc_info=True)
+            try:
+                await context.bot.send_message(
+                    chat_id=query.from_user.id,
+                    text="Видеоны жіберу кезінде желі қатесі орын алды. Сізге бәрібір жалғастыруға мүмкіндік береміз.",
+                    reply_markup=reply_markup,
+                    protect_content=True
+                )
+            except NetworkError as e_net_fallback:
+                logger.error(f"Network error sending video fallback message: {e_net_fallback}", exc_info=True)
         except Exception as e:
-            logger.error(f"Error sending video in button handler: {e}")
-            # В случае ошибки при отправке видео, попробуем альтернативный подход
-            await context.bot.send_message(
-                chat_id=query.from_user.id,
-                text="Видеоны жіберу кезінде қате орын алды. Сізге бәрібір жалғастыруға мүмкіндік береміз.",
-                reply_markup=reply_markup,
-                protect_content=True
-            )
+            logger.error(f"Error sending video in button handler: {e}", exc_info=True)
+            try:
+                await context.bot.send_message(
+                    chat_id=query.from_user.id,
+                    text="Видеоны жіберу кезінде қате орын алды. Сізге бәрібір жалғастыруға мүмкіндік береміз.",
+                    reply_markup=reply_markup,
+                    protect_content=True
+                )
+            except NetworkError as e_generic_fallback:
+                 logger.error(f"Network error sending video generic fallback message: {e_generic_fallback}", exc_info=True)
 
 # Обработчик кнопки "Сабақтарға қол жеткізгім келеді!"
 async def get_access(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -263,22 +303,29 @@ async def get_access(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Кнопка для оплаты через Kaspi Pay
         keyboard = [[InlineKeyboardButton("Төлем жасау", url='https://pay.kaspi.kz/pay/2tyi0ezv')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await query.message.reply_text(
-            "💰 Курс туралы ақпарат:\n\n"
-            "Аудио сабақтарды пайдалану мерзімі - 3 ай.\n"
-            "Бағасы - 48 000 теңге.\n"
-            "Осы төлемді төлеп, каналға қосылыңыз.\n\n"
-            "Каналға қосылу сізге 3 ай бойы Тәжен Нұрсұлтанның Қазақстан тарихы пәнінен "
-            "124 тақырыпты қамтитын авторлық аудио сабақтарын тыңдауға мүмкіндік береді!",
-            reply_markup=reply_markup,
-            protect_content=True
-        )
-        # Сообщение сразу после нажатия кнопки
-        await query.message.reply_text(
-            "Чекті жіберіңіз және қосылуды күтіңіз!",
-            protect_content=True
-        )
+        
+        try:
+            await query.message.reply_text(
+                "💰 Курс туралы ақпарат:\\n\\n"
+                "Аудио сабақтарды пайдалану мерзімі - 3 ай.\\n"
+                "Бағасы - 48 000 теңге.\\n"
+                "Осы төлемді төлеп, каналға қосылыңыз.\\n\\n"
+                "Каналға қосылу сізге 3 ай бойы Тәжен Нұрсұлтанның Қазақстан тарихы пәнінен "
+                "124 тақырыпты қамтитын авторлық аудио сабақтарын тыңдауға мүмкіндік береді!",
+                reply_markup=reply_markup,
+                protect_content=True
+            )
+        except NetworkError as e:
+            logger.error(f"Network error in get_access sending course info: {e}", exc_info=True)
+        
+        try:
+            # Сообщение сразу после нажатия кнопки
+            await query.message.reply_text(
+                "Чекті жіберіңіз және қосылуды күтіңіз!",
+                protect_content=True
+            )
+        except NetworkError as e:
+            logger.error(f"Network error in get_access sending check prompt: {e}", exc_info=True)
 
 # Обработчик отправки чека
 async def handle_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -293,53 +340,52 @@ async def handle_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Если пользователь найден, статус 'approved' и срок не истек
         if user_data and user_data[0] == 'approved' and user_data[1]:
-            # Преобразуем date в datetime, если необходимо
-            expiry_dt = user_data[1] # Переименовал, чтобы не конфликтовать с импортированным datetime
+            expiry_dt = user_data[1] 
             if isinstance(expiry_dt, date) and not isinstance(expiry_dt, datetime):
                 expiry_dt = datetime.combine(expiry_dt, time.min)
             
-            # Теперь сравниваем
             if expiry_dt > datetime.now():
                 logger.info(f"User {user_id} ('{user_name}') already has approved status with valid expiry date.")
-                
-                # Формируем клавиатуру с уроками, используя новую функцию
-                reply_markup = create_lesson_keyboard() # ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ
-                
-                # Отправляем сообщение о наличии доступа
-                await update.message.reply_text(
-                    f"Сізде сабақтарға қол жеткізу ашық! Мерзімі: {user_data[1].strftime('%d.%m.%Y')}. Төмендегі сабақтарды таңдаңыз:",
-                    reply_markup=reply_markup,
-                    protect_content=True
-                )
+                reply_markup = create_lesson_keyboard()
+                try:
+                    await update.message.reply_text(
+                        f"Сізде сабақтарға қол жеткізу ашық! Мерзімі: {user_data[1].strftime('%d.%m.%Y')}. Төмендегі сабақтарды таңдаңыз:",
+                        reply_markup=reply_markup,
+                        protect_content=True
+                    )
+                except NetworkError as e:
+                    logger.error(f"Network error sending already approved message: {e}", exc_info=True)
                 return
         
-        # Если статус не 'approved' или срок истек, продолжаем обработку как чека
         logger.info(f"Inserting/updating user {user_id} ('{user_name}') with status 'pending' in handle_payment.")
-        # Сохраняем данные пользователя в БД
         cur.execute(
             "INSERT INTO users (user_id, username, status) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO UPDATE SET username = %s, status = %s",
-            (user_id, user_name, 'pending', user_name, 'pending') # Ensure status is pending on conflict too
+            (user_id, user_name, 'pending', user_name, 'pending')
         )
         conn.commit()
         logger.info(f"User {user_id} ('{user_name}') data saved/updated with status 'pending'.")
-    except psycopg2.Error as e:
-        logger.error(f"Database error in handle_payment for user {user_id} ('{user_name}'): {e}")
+    except psycopg2.Error as e_db:
+        logger.error(f"Database error in handle_payment for user {user_id} ('{user_name}'): {e_db}", exc_info=True)
         conn.rollback()
-        await update.message.reply_text("Чекті сақтау кезінде дерекқор қатесі орын алды. Әкімшіге хабарласыңыз.", protect_content=True)
+        try:
+            await update.message.reply_text("Чекті сақтау кезінде дерекқор қатесі орын алды. Әкімшіге хабарласыңыз.", protect_content=True)
+        except NetworkError as e_net:
+            logger.error(f"Network error sending DB error message in handle_payment: {e_net}", exc_info=True)
         return
-    except Exception as e:
-        logger.error(f"Unexpected error in handle_payment (DB part) for user {user_id} ('{user_name}'): {e}")
-        await update.message.reply_text("Чекті өңдеу кезінде белгісіз қате орын алды.", protect_content=True)
+    except Exception as e_generic:
+        logger.error(f"Unexpected error in handle_payment (DB part) for user {user_id} ('{user_name}'): {e_generic}", exc_info=True)
+        try:
+            await update.message.reply_text("Чекті өңдеу кезінде белгісіз қате орын алды.", protect_content=True)
+        except NetworkError as e_net:
+            logger.error(f"Network error sending generic error message in handle_payment: {e_net}", exc_info=True)
         return
 
-    # Отправляем уведомление администратору
     keyboard = [
         [InlineKeyboardButton("Растау", callback_data=f'approve_{user_id}'),
          InlineKeyboardButton("Қабылдамау", callback_data=f'reject_{user_id}')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Пытаемся уведомить каждого администратора
     for admin_user_id in ADMIN_IDS:
         try:
             if update.message.photo:
@@ -350,26 +396,31 @@ async def handle_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=reply_markup,
                     protect_content=True
                 )
-            else: # Assuming text is a link or description of payment
+            else: 
                 await context.bot.send_message(
                     chat_id=admin_user_id,
-                    text=f"Жаңа чек: ID: {user_id}, Аты: {user_name}\nЧек мәліметі: {update.message.text}",
+                    text=f"Жаңа чек: ID: {user_id}, Аты: {user_name}\\nЧек мәліметі: {update.message.text}",
                     reply_markup=reply_markup,
                     protect_content=True
                 )
             logger.info(f"Payment notification sent to admin {admin_user_id} for user {user_id}.")
+        except NetworkError as e_admin_notify:
+            logger.error(f"Network error sending payment notification to admin {admin_user_id} for user {user_id}: {e_admin_notify}", exc_info=True)
         except Exception as e_notify:
-            logger.error(f"Failed to send payment notification to admin {admin_user_id} for user {user_id}: {e_notify}")
-            # Не отправляем ошибку пользователю, просто логируем проблему с конкретным админом
+            logger.error(f"Failed to send payment notification to admin {admin_user_id} for user {user_id}: {e_notify}", exc_info=True)
 
-    # Сообщение пользователю отправляется независимо от успеха уведомления всех админов,
-    # так как его чек уже обработан и сохранен в БД.
-    await update.message.reply_text("Чек қабылданды! Төлемді растауды күтіңіз.", protect_content=True)
+    try:
+        await update.message.reply_text("Чек қабылданды! Төлемді растауды күтіңіз.", protect_content=True)
+    except NetworkError as e:
+        logger.error(f"Network error sending check received confirmation to user: {e}", exc_info=True)
 
 # Обработчик команды /admin
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.message.from_user.id) not in ADMIN_IDS:
-        await update.message.reply_text("Бұл команда тек әкімшіге арналған.", protect_content=True)
+        try:
+            await update.message.reply_text("Бұл команда тек әкімшіге арналған.", protect_content=True)
+        except NetworkError as e:
+            logger.error(f"Network error in admin handler sending auth error: {e}", exc_info=True)
         return
 
     logger.info("Admin command: Displaying filter buttons.")
@@ -379,31 +430,56 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Бас тартылғандар (Rejected)", callback_data='list_rejected')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Пайдаланушылар тізімін таңдаңыз:", reply_markup=reply_markup, protect_content=True)
+    try:
+        await update.message.reply_text("Пайдаланушылар тізімін таңдаңыз:", reply_markup=reply_markup, protect_content=True)
+    except NetworkError as e:
+        logger.error(f"Network error in admin handler sending user list prompt: {e}", exc_info=True)
 
 # НОВЫЙ обработчик для отображения списков пользователей по статусу
 async def show_user_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    status_to_fetch = query.data.split('_')[1] # e.g., 'pending', 'approved', 'rejected'
+    status_to_fetch = query.data.split('_')[1] 
 
     logger.info(f"Admin action: Fetching users with status '{status_to_fetch}'.")
     
-    message_text = f"--- {status_to_fetch.capitalize()} пайдаланушылар ---"
+    message_text_header = f"--- {status_to_fetch.capitalize()} пайдаланушылар ---"
     no_users_text = f"Қазір {status_to_fetch} статусы бар пайдаланушылар жоқ."
 
     try:
-        conn.rollback() # На всякий случай
+        # Попытка изменить исходное сообщение на заголовок списка
+        try:
+            await query.edit_message_text(text=message_text_header)
+        except NetworkError as e_net_edit_header:
+            logger.error(f"Network error editing message to header in show_user_list ({status_to_fetch}): {e_net_edit_header}", exc_info=True)
+            # Если редактирование не удалось из-за сети, пробуем отправить как новое сообщение
+            try:
+                await context.bot.send_message(chat_id=query.from_user.id, text=message_text_header, protect_content=True)
+            except NetworkError as e_net_send_header:
+                logger.error(f"Network error sending header as new message in show_user_list ({status_to_fetch}): {e_net_send_header}", exc_info=True)
+                return # Если даже заголовок не отправить, выходим
+        except TelegramError as e_tele_edit_header: # Другие ошибки Telegram API при редактировании
+            logger.error(f"Telegram API error editing message to header in show_user_list ({status_to_fetch}): {e_tele_edit_header}", exc_info=True)
+            try:
+                await context.bot.send_message(chat_id=query.from_user.id, text=message_text_header, protect_content=True)
+            except (NetworkError, TelegramError) as e_send_header_fallback:
+                logger.error(f"Error sending header as new message (fallback) in show_user_list ({status_to_fetch}): {e_send_header_fallback}", exc_info=True)
+                return
+
+        conn.rollback() 
         cur.execute("SELECT user_id, username, expiry_date FROM users WHERE status = %s", (status_to_fetch,))
         users = cur.fetchall()
 
         if not users:
             logger.info(f"No users found with status '{status_to_fetch}'.")
-            await query.edit_message_text(text=f"{message_text}\n{no_users_text}", protect_content=True)
+            # Сообщение о том, что пользователи не найдены, отправляем как новое, т.к. заголовок уже мог быть отправлен
+            try:
+                await context.bot.send_message(chat_id=query.from_user.id, text=no_users_text, protect_content=True)
+            except (NetworkError, TelegramError) as e_no_users:
+                logger.error(f"Error sending 'no users found' message in show_user_list ({status_to_fetch}): {e_no_users}", exc_info=True)
             return
 
         logger.info(f"Found {len(users)} users with status '{status_to_fetch}'.")
-        await query.edit_message_text(text=message_text, protect_content=True) # Сначала заголовок списка
 
         for user_id, username, expiry_date in users:
             user_info = f"{username} (ID: {user_id})"
@@ -422,66 +498,98 @@ async def show_user_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 user_info = f"Бас тартылған: {user_info}"
                 action_buttons.append(InlineKeyboardButton("Растау", callback_data=f'approve_{user_id}'))
             
-            reply_markup = InlineKeyboardMarkup([action_buttons]) if action_buttons else None
-            await context.bot.send_message(chat_id=query.from_user.id, text=user_info, reply_markup=reply_markup, protect_content=True)
-
-    except psycopg2.Error as e:
-        logger.error(f"Database error in show_user_list (status: {status_to_fetch}): {e}", exc_info=True)
-        await context.bot.send_message(chat_id=query.from_user.id, text=f"База данных қатесі ({status_to_fetch} тізімі). Әкімшіге хабарласыңыз.", protect_content=True)
+            reply_markup_user = InlineKeyboardMarkup([action_buttons]) if action_buttons else None
+            try:
+                await context.bot.send_message(chat_id=query.from_user.id, text=user_info, reply_markup=reply_markup_user, protect_content=True)
+            except NetworkError as e_net_user_info:
+                logger.error(f"Network error sending user info for {user_id} in show_user_list ({status_to_fetch}): {e_net_user_info}", exc_info=True)
+            except TelegramError as e_tele_user_info:
+                logger.error(f"Telegram API error sending user info for {user_id} in show_user_list ({status_to_fetch}): {e_tele_user_info}", exc_info=True)
+            
+    except psycopg2.Error as e_db:
+        logger.error(f"Database error in show_user_list (status: {status_to_fetch}): {e_db}", exc_info=True)
+        try:
+            # Если исходное сообщение было изменено на заголовок, пробуем его изменить на ошибку
+            # Иначе отправляем новое сообщение об ошибке
+            if query.message and query.message.text == message_text_header: 
+                await query.edit_message_text(text=f"База данных қатесі ({status_to_fetch} тізімі).")
+            else:
+                await context.bot.send_message(chat_id=query.from_user.id, text=f"База данных қатесі ({status_to_fetch} тізімі). Әкімшіге хабарласыңыз.", protect_content=True)
+        except (NetworkError, TelegramError) as e_report_db_err:
+            logger.error(f"Error reporting DB error to admin in show_user_list ({status_to_fetch}): {e_report_db_err}", exc_info=True)
         conn.rollback()
-    except Exception as e:
-        logger.error(f"Unexpected error in show_user_list (status: {status_to_fetch}): {e}", exc_info=True)
-        await context.bot.send_message(chat_id=query.from_user.id, text=f"Белгісіз қате ({status_to_fetch} тізімі).", protect_content=True)
+    except Exception as e_generic:
+        logger.error(f"Unexpected error in show_user_list (status: {status_to_fetch}): {e_generic}", exc_info=True)
+        try:
+            if query.message and query.message.text == message_text_header:
+                 await query.edit_message_text(text=f"Белгісіз қате ({status_to_fetch} тізімі).")
+            else:
+                await context.bot.send_message(chat_id=query.from_user.id, text=f"Белгісіз қате ({status_to_fetch} тізімі).", protect_content=True)
+        except (NetworkError, TelegramError) as e_report_gen_err:
+            logger.error(f"Error reporting generic error to admin in show_user_list ({status_to_fetch}): {e_report_gen_err}", exc_info=True)
 
 # Обработчик кнопок аппрува и реджекта
 async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    admin_chat_id = query.from_user.id # ID админа, который нажал кнопку
     
-    if str(query.from_user.id) not in ADMIN_IDS:
-        await query.answer("Бұл команда тек әкімшіге арналған.", show_alert=True)
-        return
+    if str(admin_chat_id) not in ADMIN_IDS:
+        try:
+            await query.answer("Бұл команда тек әкімшіге арналған.", show_alert=True)
+        except (NetworkError, TelegramError) as e_ans_auth:
+            logger.warning(f"Error answering callback query for auth in handle_admin_action: {e_ans_auth}")
+            return
 
-    await query.answer()
+    try:
+        await query.answer() # Отвечаем на callback
+    except (NetworkError, TelegramError) as e_ans_main:
+        logger.warning(f"Error answering callback query in handle_admin_action: {e_ans_main}")
+        # Продолжаем выполнение, т.к. это не критично для логики, но админ не увидит "часики"
 
     action, user_id_str = query.data.split('_')
     user_id = int(user_id_str)
     
-    user_name = "Пайдаланушы"
+    user_name = f"Пайдаланушы (ID: {user_id})" # Default name
     try:
         user_chat = await context.bot.get_chat(user_id)
         user_name = user_chat.full_name or user_chat.username or f"ID: {user_id}"
-    except Exception as e:
-        logger.error(f"Could not get chat for user_id {user_id} in handle_admin_action: {e}")
+    except (NetworkError, TelegramError) as e_get_chat:
+        logger.error(f"Could not get chat for user_id {user_id} in handle_admin_action: {e_get_chat}", exc_info=True)
+        # Продолжаем с user_name по умолчанию
+    except Exception as e_get_chat_other:
+        logger.error(f"Unexpected error getting chat for user_id {user_id}: {e_get_chat_other}", exc_info=True)
+
+    admin_confirm_text = ""
+    user_notification_text = ""
+    db_success = False
 
     try:
         if action == 'approve':
             logger.info(f"Admin action: Approving user {user_id} ('{user_name}')")
             payment_date = datetime.now()
-            expiry_date = payment_date + timedelta(days=90)
+            expiry_date_val = payment_date + timedelta(days=90) # Переименовал
             cur.execute(
                 "UPDATE users SET status = %s, payment_date = %s, expiry_date = %s WHERE user_id = %s",
-                ('approved', payment_date, expiry_date, user_id)
+                ('approved', payment_date, expiry_date_val, user_id)
             )
             conn.commit()
-            logger.info(f"User {user_id} ('{user_name}') approved.")
+            db_success = True
+            logger.info(f"User {user_id} ('{user_name}') approved in DB.")
 
-            # Используем новую функцию для создания клавиатуры
-            reply_markup_lessons = create_lesson_keyboard() # ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ
+            reply_markup_lessons = create_lesson_keyboard()
+            user_notification_text = f"✅ Төлем расталды! Сабақтарға қол жеткізу ашылды.\\nМерзімі: {expiry_date_val.strftime('%d.%m.%Y')} дейін.\\nТөмендегі сабақтарды таңдаңыз:"
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=user_notification_text,
+                    reply_markup=reply_markup_lessons,
+                    protect_content=True
+                )
+                logger.info(f"Approval notification sent to user {user_id}.")
+            except (NetworkError, TelegramError) as e_user_approve_notify:
+                logger.error(f"Error sending approval notification to user {user_id}: {e_user_approve_notify}", exc_info=True)
             
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"✅ Төлем расталды! Сабақтарға қол жеткізу ашылды.\nМерзімі: {expiry_date.strftime('%d.%m.%Y')} дейін.\nТөмендегі сабақтарды таңдаңыз:",
-                reply_markup=reply_markup_lessons,
-                protect_content=True
-            )
-            confirm_text = f"Қол жеткізу {user_name} (ID: {user_id}) үшін ашылды."
-            if query.message.caption is not None:
-                await query.edit_message_caption(caption=confirm_text, protect_content=True)
-            elif query.message.text is not None:
-                await query.edit_message_text(text=confirm_text, protect_content=True)
-            else: # Fallback or just remove buttons
-                await query.edit_message_reply_markup(reply_markup=None)
-                logger.info(f"Admin message for user {user_id} (approve) had no text/caption, buttons removed.")
+            admin_confirm_text = f"{user_name} (ID: {user_id}) үшін қол жеткізу ашылды."
 
         elif action == 'reject':
             logger.info(f"Admin action: Rejecting user {user_id} ('{user_name}')")
@@ -490,89 +598,131 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
                 ('rejected', user_id)
             )
             conn.commit()
-            logger.info(f"User {user_id} ('{user_name}') rejected.")
+            db_success = True
+            logger.info(f"User {user_id} ('{user_name}') rejected in DB.")
             
-            await context.bot.send_message(
-                chat_id=user_id,
-                text="❌ Төлем расталмады. Қайта тексеріп, чекті қайта жіберіңіз.",
-                protect_content=True
-            )
-            reject_text = f"Қол жеткізу {user_name} (ID: {user_id}) үшін жабылды (бас тартылды)."
-            if query.message.caption is not None:
-                await query.edit_message_caption(caption=reject_text, protect_content=True)
-            elif query.message.text is not None:
-                await query.edit_message_text(text=reject_text, protect_content=True)
-            else: # Fallback or just remove buttons
-                await query.edit_message_reply_markup(reply_markup=None)
-                logger.info(f"Admin message for user {user_id} (reject) had no text/caption, buttons removed.")
+            user_notification_text = "❌ Төлем расталмады. Қайта тексеріп, чекті қайта жіберіңіз."
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=user_notification_text,
+                    protect_content=True
+                )
+                logger.info(f"Rejection notification sent to user {user_id}.")
+            except (NetworkError, TelegramError) as e_user_reject_notify:
+                logger.error(f"Error sending rejection notification to user {user_id}: {e_user_reject_notify}", exc_info=True)
+            
+            admin_confirm_text = f"{user_name} (ID: {user_id}) үшін қол жеткізу жабылды (бас тартылды)."
 
         elif action == 'revoke':
             logger.info(f"Admin action: Revoking access for user {user_id} ('{user_name}')")
             cur.execute(
                 "UPDATE users SET status = %s, payment_date = NULL, expiry_date = NULL WHERE user_id = %s",
-                ('pending', user_id) # Ставим статус pending, обнуляем даты
+                ('pending', user_id) 
             )
             conn.commit()
-            logger.info(f"Access revoked for user {user_id} ('{user_name}'). Status set to pending.")
+            db_success = True
+            logger.info(f"Access revoked for user {user_id} ('{user_name}') in DB. Status set to pending.")
             
-            await context.bot.send_message(
-                chat_id=user_id,
-                text="ℹ️ Сіздің курсқа қол жеткізуіңіз әкімшімен тоқтатылды. Қосымша ақпарат алу үшін әкімшіге хабарласыңыз.",
-                protect_content=True
-            )
-            revoke_text = f"Пайдаланушы {user_name} (ID: {user_id}) үшін қол жеткізу тоқтатылды. Енді ол күтуде."
-            if query.message.caption is not None:
-                await query.edit_message_caption(caption=revoke_text, protect_content=True)
-            elif query.message.text is not None:
-                await query.edit_message_text(text=revoke_text, protect_content=True)
-            else:
-                await query.edit_message_reply_markup(reply_markup=None)
-                logger.info(f"Admin message for user {user_id} (revoke) had no text/caption, buttons removed.")
+            user_notification_text = "ℹ️ Сіздің курсқа қол жеткізуіңіз әкімшімен тоқтатылды. Қосымша ақпарат алу үшін әкімшіге хабарласыңыз."
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=user_notification_text,
+                    protect_content=True
+                )
+                logger.info(f"Revoke notification sent to user {user_id}.")
+            except (NetworkError, TelegramError) as e_user_revoke_notify:
+                logger.error(f"Error sending revoke notification to user {user_id}: {e_user_revoke_notify}", exc_info=True)
 
-    except psycopg2.Error as e:
-        logger.error(f"Database error in handle_admin_action for user {user_id} ('{user_name}'), action '{action}': {e}")
+            admin_confirm_text = f"Пайдаланушы {user_name} (ID: {user_id}) үшін қол жеткізу тоқтатылды. Енді ол күтуде."
+
+        # Update admin's message only if DB operation was successful
+        if db_success and admin_confirm_text:
+            try:
+                if query.message.caption is not None:
+                    await query.edit_message_caption(caption=admin_confirm_text, protect_content=True)
+                elif query.message.text is not None:
+                    await query.edit_message_text(text=admin_confirm_text)
+                else: 
+                    await query.edit_message_reply_markup(reply_markup=None)
+                    logger.info(f"Admin message (original with buttons for {user_id}, action {action}) had no text/caption, buttons removed.")
+            except (NetworkError, TelegramError) as e_admin_edit:
+                logger.error(f"Error updating admin's original message for user {user_id}, action {action}: {e_admin_edit}", exc_info=True)
+                # Fallback: send new message to admin if edit fails
+                try:
+                    await context.bot.send_message(chat_id=admin_chat_id, text=f"(Жаңарту сәтсіз) {admin_confirm_text}", protect_content=True)
+                except (NetworkError, TelegramError) as e_admin_fallback:
+                    logger.error(f"Error sending admin fallback confirmation for {action} user {user_id}: {e_admin_fallback}", exc_info=True)
+
+    except psycopg2.Error as e_db_main:
+        logger.error(f"Database error in handle_admin_action for user {user_id} ('{user_name}'), action '{action}': {e_db_main}", exc_info=True)
         conn.rollback()
+        error_message_for_admin = f"База данных қатесі ({action} {user_name}). Әкімшіге хабарласыңыз."
         try:
-            await query.edit_message_text(text=f"База данных қатесі ({action}). Әкімшіге хабарласыңыз.", protect_content=True)
-        except:
-             await context.bot.send_message(chat_id=query.from_user.id, text=f"База данных қатесі ({action}). Әкімшіге хабарласыңыз.", protect_content=True)
-    except Exception as e:
-        logger.error(f"Unexpected error in handle_admin_action for user {user_id} ('{user_name}'), action '{action}': {e}")
-        try:
-            await query.edit_message_text(text=f"Белгісіз қате орын алды ({action}).", protect_content=True)
-        except:
-            await context.bot.send_message(chat_id=query.from_user.id, text=f"Белгісіз қате орын алды ({action}).", protect_content=True)
+            # Try to edit the original message first, if it exists
+            if query.message:
+                 await query.edit_message_text(text=error_message_for_admin)
+            else: # If not, send a new message
+                 await context.bot.send_message(chat_id=admin_chat_id, text=error_message_for_admin, protect_content=True)
+        except (NetworkError, TelegramError) as e_report_db_err_admin:
+             logger.error(f"Error reporting DB error to admin in handle_admin_action: {e_report_db_err_admin}", exc_info=True)
+        except Exception as e_edit_generic_db: # Catch other potential errors with edit_message_text if query.message is stale
+             logger.warning(f"Generic error editing admin message for DB error: {e_edit_generic_db}")
+             try: # Fallback to sending new message
+                await context.bot.send_message(chat_id=admin_chat_id, text=error_message_for_admin, protect_content=True)
+             except (NetworkError, TelegramError) as e_report_db_err_admin_fallback:
+                logger.error(f"Error reporting DB error (fallback) to admin in handle_admin_action: {e_report_db_err_admin_fallback}", exc_info=True)
 
-# Обработчик выбора урока (пока просто заглушка)
+    except Exception as e_generic_main:
+        logger.error(f"Unexpected error in handle_admin_action for user {user_id} ('{user_name}'), action '{action}': {e_generic_main}", exc_info=True)
+        error_message_for_admin = f"Белгісіз қате орын алды ({action} {user_name})."
+        try:
+            if query.message:
+                await query.edit_message_text(text=error_message_for_admin)
+            else:
+                await context.bot.send_message(chat_id=admin_chat_id, text=error_message_for_admin, protect_content=True)
+        except (NetworkError, TelegramError) as e_report_gen_err_admin:
+            logger.error(f"Error reporting generic error to admin in handle_admin_action: {e_report_gen_err_admin}", exc_info=True)
+        except Exception as e_edit_generic_main: # Catch other potential errors with edit_message_text
+            logger.warning(f"Generic error editing admin message for generic error: {e_edit_generic_main}")
+            try: # Fallback
+                await context.bot.send_message(chat_id=admin_chat_id, text=error_message_for_admin, protect_content=True)
+            except (NetworkError, TelegramError) as e_report_gen_err_admin_fallback:
+                logger.error(f"Error reporting generic error (fallback) to admin in handle_admin_action: {e_report_gen_err_admin_fallback}", exc_info=True)
+
+# Обработчик выбора урока
 async def select_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     lesson_id_str = query.data.split('_')[1]
-    lesson_index = int(lesson_id_str) - 1 # Для доступа к списку LESSON_TITLES (0-based)
+    lesson_index = int(lesson_id_str) - 1 
 
-    # Немедленно отвечаем на callback_query, чтобы избежать таймаута
     await query.answer()
 
     lesson_title = LESSON_TITLES[lesson_index] if 0 <= lesson_index < len(LESSON_TITLES) else f"Сабақ-{lesson_id_str}"
 
     try:
-        conn.rollback() # Ensure fresh transaction state
+        conn.rollback() 
         cur.execute("SELECT status FROM users WHERE user_id = %s", (user_id,))
         user_status_row = cur.fetchone()
 
         if not user_status_row or user_status_row[0] != 'approved':
             logger.info(f"User {user_id} tried to access lesson '{lesson_title}' but status is not 'approved'.")
-            # Отправляем сообщение как обычное сообщение, а не через query.answer()
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"'{lesson_title}' таңдауға тырыстыңыз, бірақ курсқа қол жеткізуіңіз жабық.",
-                protect_content=True
-            )
             try:
-                # Попытка убрать кнопки, если это возможно
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"'{lesson_title}' таңдауға тырыстыңыз, бірақ курсқа қол жеткізуіңіз жабық.",
+                    protect_content=True
+                )
+            except NetworkError as e:
+                logger.error(f"Network error sending access denied message in select_lesson: {e}", exc_info=True)
+            try:
                 await query.edit_message_reply_markup(reply_markup=None)
-            except Exception as e_edit:
-                logger.warning(f"Could not edit message for user {user_id} in select_lesson after denied access: {e_edit}")
+            except NetworkError as e_edit_nm: # NetworkError
+                logger.warning(f"Network error editing message reply markup in select_lesson (denied access): {e_edit_nm}", exc_info=True)
+            except Exception as e_edit: # Other errors like message not modified, etc.
+                logger.warning(f"Could not edit message for user {user_id} in select_lesson after denied access: {e_edit}", exc_info=True)
             return
 
         logger.info(f"User {user_id} (status: approved) selected lesson '{lesson_title}' (index: {lesson_index}).")
@@ -581,31 +731,29 @@ async def select_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Looking for lesson files in: {lesson_folder_path}")
 
         if os.path.isdir(lesson_folder_path):
-            # Собираем все подходящие аудиофайлы из папки
             raw_audio_files = [
                 f for f in os.listdir(lesson_folder_path) 
                 if os.path.isfile(os.path.join(lesson_folder_path, f)) and 
                    f.lower().endswith(('.mp3', '.m4a', '.ogg', '.wav', '.opus'))
             ]
 
-            # Индексы уроков (0-based), для которых нужна специальная сортировка
-            # Номера уроков: 5, 7, 10, 12, 21, 25
             problematic_lesson_indices = [4, 6, 9, 11, 20, 24] 
-
             audio_files_sorted = []
             if lesson_index in problematic_lesson_indices:
                 logger.info(f"Applying special numerical prefix sorting for lesson: '{lesson_title}'")
-                # Сортируем по числовому префиксу, затем по имени файла для стабильности
                 audio_files_sorted = sorted(raw_audio_files, key=lambda f: (extract_number_prefix(f), f))
             else:
                 logger.info(f"Applying default alphabetical sorting for lesson: '{lesson_title}'")
                 audio_files_sorted = sorted(raw_audio_files)
             
-            # Переименовываем audio_files_sorted в audio_files для дальнейшего использования
             audio_files = audio_files_sorted
 
             if audio_files:
-                await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағының материалдары жіберілуде...", protect_content=True) # Изменено с query.message.reply_text
+                try:
+                    await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағының материалдары жіберілуде...", protect_content=True)
+                except NetworkError as e:
+                    logger.error(f"Network error sending 'materials sending' message in select_lesson: {e}", exc_info=True)
+                
                 for audio_file_name in audio_files:
                     audio_file_path = os.path.join(lesson_folder_path, audio_file_name)
                     try:
@@ -618,31 +766,58 @@ async def select_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 protect_content=True
                             )
                         logger.info(f"Successfully sent {audio_file_name}")
+                    except NetworkError as e_send_audio_net:
+                        logger.error(f"Network error sending audio file {audio_file_path} to user {user_id}: {e_send_audio_net}", exc_info=True)
+                        try:
+                            await context.bot.send_message(chat_id=user_id, text=f"'{audio_file_name}' файлын жіберу кезінде желі қатесі орын алды.", protect_content=True)
+                        except NetworkError as e_inner:
+                            logger.error(f"Network error sending audio send error message: {e_inner}", exc_info=True)
                     except Exception as e_send_audio:
-                        logger.error(f"Failed to send audio file {audio_file_path} to user {user_id}: {e_send_audio}")
-                        await context.bot.send_message(chat_id=user_id, text=f"'{audio_file_name}' файлын жіберу кезінде қате орын алды.", protect_content=True)
-                await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағының барлық материалдары жіберілді.", protect_content=True)
+                        logger.error(f"Failed to send audio file {audio_file_path} to user {user_id}: {e_send_audio}", exc_info=True)
+                        try:
+                            await context.bot.send_message(chat_id=user_id, text=f"'{audio_file_name}' файлын жіберу кезінде қате орын алды.", protect_content=True)
+                        except NetworkError as e_inner:
+                            logger.error(f"Network error sending audio send generic error message: {e_inner}", exc_info=True)
+                try:
+                    await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағының барлық материалдары жіберілді.", protect_content=True)
+                except NetworkError as e:
+                    logger.error(f"Network error sending 'all materials sent' message: {e}", exc_info=True)
             else:
                 logger.info(f"No audio files found in {lesson_folder_path}.")
-                await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағы үшін аудио материалдар әзірге жоқ немесе табылмады.", protect_content=True) # Изменено с query.message.reply_text
+                try:
+                    await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағы үшін аудио материалдар әзірге жоқ немесе табылмады.", protect_content=True)
+                except NetworkError as e:
+                    logger.error(f"Network error sending 'no audio materials' message: {e}", exc_info=True)
         else:
             logger.warning(f"Lesson folder not found: {lesson_folder_path}")
-            await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағының материалдары табылмады. Әкімшіге хабарласыңыз.", protect_content=True) # Изменено с query.message.reply_text
+            try:
+                await context.bot.send_message(chat_id=user_id, text=f"'{lesson_title}' сабағының материалдары табылмады. Әкімшіге хабарласыңыз.", protect_content=True)
+            except NetworkError as e:
+                logger.error(f"Network error sending 'lesson folder not found' message: {e}", exc_info=True)
 
-    except psycopg2.Error as e:
-        logger.error(f"Database error in select_lesson for user {user_id}, lesson '{lesson_title}': {e}")
+    except psycopg2.Error as e_db:
+        logger.error(f"Database error in select_lesson for user {user_id}, lesson '{lesson_title}': {e_db}", exc_info=True)
         # query.answer() уже был вызван
-        await context.bot.send_message(chat_id=user_id, text="Дерекқор қатесі орын алды. Әкімшіге хабарласыңыз.", protect_content=True)
+        try:
+            await context.bot.send_message(chat_id=user_id, text="Дерекқор қатесі орын алды. Әкімшіге хабарласыңыз.", protect_content=True)
+        except NetworkError as e_net:
+            logger.error(f"Network error sending DB error in select_lesson: {e_net}", exc_info=True)
         conn.rollback()
-    except Exception as e:
-        logger.error(f"Unexpected error in select_lesson for user {user_id}, lesson '{lesson_title}': {e}")
+    except Exception as e_generic:
+        logger.error(f"Unexpected error in select_lesson for user {user_id}, lesson '{lesson_title}': {e_generic}", exc_info=True)
         # query.answer() уже был вызван
-        await context.bot.send_message(chat_id=user_id, text="Белгісіз қате орын алды. Әкімшіге хабарласыңыз.", protect_content=True)
+        try:
+            await context.bot.send_message(chat_id=user_id, text="Белгісіз қате орын алды. Әкімшіге хабарласыңыз.", protect_content=True)
+        except NetworkError as e_net:
+            logger.error(f"Network error sending generic error in select_lesson: {e_net}", exc_info=True)
 
 # Обработчик команды /approve (для обратной совместимости)
 async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.message.from_user.id) not in ADMIN_IDS:
-        await update.message.reply_text("Бұл команда тек әкімшіге арналған.", protect_content=True)
+        try:
+            await update.message.reply_text("Бұл команда тек әкімшіге арналған.", protect_content=True)
+        except NetworkError as e:
+            logger.error(f"Network error in legacy /approve (auth): {e}", exc_info=True)
         return
     try:
         user_id = int(context.args[0])
@@ -656,30 +831,48 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
         logger.info(f"User {user_id} approved via legacy /approve.")
 
-        # Используем новую функцию для создания клавиатуры
-        reply_markup = create_lesson_keyboard() # ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ
+        reply_markup = create_lesson_keyboard()
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"✅ Төлем расталды! Сабақтарға қол жеткізу ашылды (legacy /approve арқылы).\\nМерзімі: {expiry_date.strftime('%d.%m.%Y')} дейін.\\nТөмендегі сабақтарды таңдаңыз:",
+                reply_markup=reply_markup,
+                protect_content=True
+            )
+        except NetworkError as e:
+            logger.error(f"Network error sending approval message in legacy /approve to user {user_id}: {e}", exc_info=True)
         
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=f"✅ Төлем расталды! Сабақтарға қол жеткізу ашылды (legacy /approve арқылы).\nМерзімі: {expiry_date.strftime('%d.%m.%Y')} дейін.\nТөмендегі сабақтарды таңдаңыз:",
-            reply_markup=reply_markup,
-            protect_content=True
-        )
-        await update.message.reply_text(f"Қол жеткізу ID: {user_id} үшін ашылды (legacy /approve).", protect_content=True)
+        try:
+            await update.message.reply_text(f"Қол жеткізу ID: {user_id} үшін ашылды (legacy /approve).", protect_content=True)
+        except NetworkError as e:
+            logger.error(f"Network error sending confirmation message in legacy /approve to admin: {e}", exc_info=True)
+
     except (IndexError, ValueError):
-        await update.message.reply_text("Пайдалану: /approve <user_id>", protect_content=True)
-    except psycopg2.Error as e:
-        logger.error(f"Database error in legacy /approve for user_id {context.args[0] if context.args else 'N/A'}: {e}")
+        try:
+            await update.message.reply_text("Пайдалану: /approve <user_id>", protect_content=True)
+        except NetworkError as e:
+            logger.error(f"Network error sending usage message in legacy /approve: {e}", exc_info=True)
+    except psycopg2.Error as e_db:
+        logger.error(f"Database error in legacy /approve for user_id {context.args[0] if context.args else 'N/A'}: {e_db}", exc_info=True)
         conn.rollback()
-        await update.message.reply_text("База данных қатесі (/approve). Әкімшіге хабарласыңыз.", protect_content=True)
-    except Exception as e:
-        logger.error(f"Unexpected error in legacy /approve for user_id {context.args[0] if context.args else 'N/A'}: {e}")
-        await update.message.reply_text("Белгісіз қате орын алды (/approve).", protect_content=True)
+        try:
+            await update.message.reply_text("База данных қатесі (/approve). Әкімшіге хабарласыңыз.", protect_content=True)
+        except NetworkError as e:
+            logger.error(f"Network error sending DB error message in legacy /approve: {e}", exc_info=True)
+    except Exception as e_generic:
+        logger.error(f"Unexpected error in legacy /approve for user_id {context.args[0] if context.args else 'N/A'}: {e_generic}", exc_info=True)
+        try:
+            await update.message.reply_text("Белгісіз қате орын алды (/approve).", protect_content=True)
+        except NetworkError as e:
+            logger.error(f"Network error sending generic error message in legacy /approve: {e}", exc_info=True)
 
 # Обработчик команды /reject (для обратной совместимости)
 async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.message.from_user.id) not in ADMIN_IDS:
-        await update.message.reply_text("Бұл команда тек әкімшіге арналған.", protect_content=True)
+        try:
+            await update.message.reply_text("Бұл команда тек әкімшіге арналған.", protect_content=True)
+        except NetworkError as e:
+            logger.error(f"Network error in legacy /reject (auth): {e}", exc_info=True)
         return
     try:
         user_id = int(context.args[0])
@@ -691,21 +884,38 @@ async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
         logger.info(f"User {user_id} rejected via legacy /reject.")
 
-        await context.bot.send_message(
-            chat_id=user_id,
-            text="❌ Төлем расталмады (legacy /reject арқылы). Қайта тексеріп, чекті қайта жіберіңіз.",
-            protect_content=True
-        )
-        await update.message.reply_text(f"Қол жеткізу ID: {user_id} үшін жабылды (legacy /reject).", protect_content=True)
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="❌ Төлем расталмады (legacy /reject арқылы). Қайта тексеріп, чекті қайта жіберіңіз.",
+                protect_content=True
+            )
+        except NetworkError as e:
+            logger.error(f"Network error sending rejection message in legacy /reject to user {user_id}: {e}", exc_info=True)
+        
+        try:
+            await update.message.reply_text(f"Қол жеткізу ID: {user_id} үшін жабылды (legacy /reject).", protect_content=True)
+        except NetworkError as e:
+            logger.error(f"Network error sending confirmation message in legacy /reject to admin: {e}", exc_info=True)
+
     except (IndexError, ValueError):
-        await update.message.reply_text("Пайдалану: /reject <user_id>", protect_content=True)
-    except psycopg2.Error as e:
-        logger.error(f"Database error in legacy /reject for user_id {context.args[0] if context.args else 'N/A'}: {e}")
+        try:
+            await update.message.reply_text("Пайдалану: /reject <user_id>", protect_content=True)
+        except NetworkError as e:
+            logger.error(f"Network error sending usage message in legacy /reject: {e}", exc_info=True)
+    except psycopg2.Error as e_db:
+        logger.error(f"Database error in legacy /reject for user_id {context.args[0] if context.args else 'N/A'}: {e_db}", exc_info=True)
         conn.rollback()
-        await update.message.reply_text("База данных қатесі (/reject). Әкімшіге хабарласыңыз.", protect_content=True)
-    except Exception as e:
-        logger.error(f"Unexpected error in legacy /reject for user_id {context.args[0] if context.args else 'N/A'}: {e}")
-        await update.message.reply_text("Белгісіз қате орын алды (/reject).", protect_content=True)
+        try:
+            await update.message.reply_text("База данных қатесі (/reject). Әкімшіге хабарласыңыз.", protect_content=True)
+        except NetworkError as e:
+            logger.error(f"Network error sending DB error message in legacy /reject: {e}", exc_info=True)
+    except Exception as e_generic:
+        logger.error(f"Unexpected error in legacy /reject for user_id {context.args[0] if context.args else 'N/A'}: {e_generic}", exc_info=True)
+        try:
+            await update.message.reply_text("Белгісіз қате орын алды (/reject).", protect_content=True)
+        except NetworkError as e:
+            logger.error(f"Network error sending generic error message in legacy /reject: {e}", exc_info=True)
 
 # Основная функция
 def main():
