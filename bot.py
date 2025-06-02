@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 TOKEN = os.environ.get('TOKEN', '7991006616:AAEuHwhqbFyMVXTVy56ocv22JWZELf5kM7o')
 
 # Telegram ID администратора
-ADMIN_IDS = ['413221603'] # Должен быть список, даже с одним ID
+ADMIN_IDS = ['1645154232'] # Должен быть список, даже с одним ID
 # Названия уроков (ОБНОВЛЕНО согласно списку папок пользователя)
 LESSON_TITLES = [
     "1 сабақ. Орталық Азия және Ұлы Дала",
@@ -193,7 +193,7 @@ async def next_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 protect_content=True
             )
         except NetworkError as ne_generic_error:
-            logger.error(f"Network error in next_step handler sending generic photo error message: {ne_generic_error}", exc_info=True)
+                 logger.error(f"Network error sending generic photo error message: {ne_generic_error}", exc_info=True)
     
     # Сразу отправляем текст об авторе с кнопкой "start"
     keyboard = [[InlineKeyboardButton("start", callback_data='start')]]
@@ -393,6 +393,14 @@ async def handle_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     chat_id=admin_user_id,
                     photo=update.message.photo[-1].file_id,
                     caption=f"Жаңа чек: ID: {user_id}, Аты: {user_name}",
+                    reply_markup=reply_markup,
+                    protect_content=True
+                )
+            elif update.message.document and update.message.document.mime_type == 'application/pdf':
+                await context.bot.send_document(
+                    chat_id=admin_user_id,
+                    document=update.message.document.file_id,
+                    caption=f"Жаңа PDF чек: ID: {user_id}, Аты: {user_name}",
                     reply_markup=reply_markup,
                     protect_content=True
                 )
@@ -945,7 +953,7 @@ def main():
         application.add_handler(CallbackQueryHandler(next_step, pattern='next'))
         application.add_handler(CallbackQueryHandler(button, pattern='start'))
         application.add_handler(CallbackQueryHandler(get_access, pattern='get_access'))
-        application.add_handler(MessageHandler(filters.PHOTO | filters.TEXT & ~filters.COMMAND, handle_payment))
+        application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL | filters.TEXT & ~filters.COMMAND, handle_payment))
         application.add_handler(CommandHandler("admin", admin))
         application.add_handler(CallbackQueryHandler(show_user_list, pattern='^list_(pending|approved|rejected)$'))
         application.add_handler(CallbackQueryHandler(handle_admin_action, pattern='^(approve|reject|revoke)_\\d+$'))
