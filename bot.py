@@ -79,6 +79,7 @@ def extract_number_prefix(filename):
 
 # Функция для загрузки file_id из базы данных
 def load_video_file_id():
+    # Намеренно НЕ загружаем file_id из базы данных
     global VIDEO_FILE_ID
     try:
         # Проверяем, есть ли таблица для хранения настроек
@@ -204,11 +205,11 @@ async def next_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     author_text = (
         "Тәжен Нұрсұлтан Шәутенұлы\n\n"
-        "Қырық жылға жуық еңбек өтілі бар Педагог-шебер, ҚР \"Білім беру ісінің үздігі\", "
-        "\"Ы. Алтынсарин төсбелгісінің\" иегері, Қазақстан тарихы пәні бойынша "
-        "бірнеше әдістемелік құралдардың авторы."
-    )
-    
+        "Қырық жылға жуық еңбек өтілі бар Педагог-шебер,\n"
+        "ҚР 'Білім беру ісінің үздігі',\n"
+        "'Ы. Алтынсарин төсбелгісінің' иегері,\n"
+        "Қазақстан тарихы пәні бойынша бірнеше әдістемелік құралдардың авторы."
+        )
     try:
         await context.bot.send_message(
             chat_id=query.from_user.id,
@@ -229,7 +230,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         global VIDEO_FILE_ID
-        video_path = 'video.mp4'  # Путь к вашему видео файлу
+        video_path = 'video1.mp4'  # Путь к вашему видео файлу
 
         try:
             # Если у нас уже есть file_id от предыдущей отправки, используем его
