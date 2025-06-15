@@ -8,7 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Копирование файлов проекта
 COPY bot.py .
-COPY video.mp4 .
+COPY video1.mp4 .
 COPY lessons/ lessons/
 
 # Запуск бота
