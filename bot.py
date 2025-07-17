@@ -15,7 +15,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # API-токен бота из переменной окружения или значения по умолчанию
-TOKEN = os.environ.get('TOKEN', '7991006616:AAEuHwhqbFyMVXTVy56ocv22JWZELf5kM7o')
+TOKEN = os.environ.get('TOKEN', '7991006616:AAEbylMKn7nGDDQeY_fMmkNQ-y8RvvhZCFI')
 
 # Telegram ID администратора
 ADMIN_IDS = ['1645154232'] # Должен быть список, даже с одним ID
