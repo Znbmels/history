@@ -33,7 +33,7 @@ services:
       - DB_NAME=bot
       - DB_USER=postgres
       - DB_PASSWORD=admin
-      - TOKEN=7991006616:AAEuHwhqbFyMVXTVy56ocv22JWZELf5kM7o
+      - TOKEN=7339317818:AAEeTxHPrd0BsqSlMFk41ZFMdvp33t8DyjU
       - HTTPX_READ_TIMEOUT=60
       - HTTPX_CONNECT_TIMEOUT=30
       - HTTPX_POOL_TIMEOUT=30
