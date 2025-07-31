@@ -338,17 +338,23 @@ async def handle_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = user.id
     user_name = user.full_name
 
+    # Логируем тип сообщения для отладки
+    logger.info(f"handle_payment called for user {user_id} ('{user_name}')")
+    logger.info(f"Message type - Photo: {bool(update.message.photo)}, Document: {bool(update.message.document)}, Text: {bool(update.message.text)}")
+    if update.message.document:
+        logger.info(f"Document mime_type: {update.message.document.mime_type}")
+
     try:
         # Сначала проверяем текущий статус пользователя
         cur.execute("SELECT status, expiry_date FROM users WHERE user_id = %s", (user_id,))
         user_data = cur.fetchone()
-        
+
         # Если пользователь найден, статус 'approved' и срок не истек
         if user_data and user_data[0] == 'approved' and user_data[1]:
-            expiry_dt = user_data[1] 
+            expiry_dt = user_data[1]
             if isinstance(expiry_dt, date) and not isinstance(expiry_dt, datetime):
                 expiry_dt = datetime.combine(expiry_dt, time.min)
-            
+
             if expiry_dt > datetime.now():
                 logger.info(f"User {user_id} ('{user_name}') already has approved status with valid expiry date.")
                 reply_markup = create_lesson_keyboard()
@@ -377,7 +383,89 @@ async def handle_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         logger.error(f"Network error sending admin contact info to approved user: {e}", exc_info=True)
 
                 return
-        
+    except Exception as e:
+        logger.error(f"Error checking user status: {e}", exc_info=True)
+
+    keyboard = [
+        [InlineKeyboardButton("Растау", callback_data=f'approve_{user_id}'),
+         InlineKeyboardButton("Қабылдамау", callback_data=f'reject_{user_id}')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # Сначала проверяем, что это действительно фото, изображение или PDF
+    is_image = update.message.photo or (update.message.document and update.message.document.mime_type and
+                                       (update.message.document.mime_type.startswith('image/') or
+                                        update.message.document.mime_type == 'application/pdf'))
+
+    if not is_image:
+        if update.message.text:
+            logger.info(f"User {user_id} sent text message instead of photo/PDF: {update.message.text}")
+            try:
+                await update.message.reply_text(
+                    "⚠️ Сіз тек сурет немесе PDF файл жібере аласыз!\n\n"
+                    "📞 Егер сізге көмек керек болса, қолданыңыз:\n"
+                    "🔸 /admin_khabar сіздің хабарламаңыз\n\n"
+                    "📝 Мысал: /admin_khabar Сабақтар ашылмай тұр",
+                    protect_content=True
+                )
+            except NetworkError as e:
+                logger.error(f"Network error sending text filter message: {e}", exc_info=True)
+        return  # Не отправляем админу и не сохраняем в базу
+
+    # Отправляем файл всем админам
+    admin_notification_success = False
+    for admin_user_id in ADMIN_IDS:
+        try:
+            if update.message.photo:
+                logger.info(f"Sending photo to admin {admin_user_id} from user {user_id}")
+                await context.bot.send_photo(
+                    chat_id=admin_user_id,
+                    photo=update.message.photo[-1].file_id,
+                    caption=f"Жаңа чек: ID: {user_id}, Аты: {user_name}",
+                    reply_markup=reply_markup,
+                    protect_content=True
+                )
+                logger.info(f"Photo successfully sent to admin {admin_user_id}")
+            elif update.message.document:
+                if update.message.document.mime_type == 'application/pdf':
+                    logger.info(f"Sending PDF to admin {admin_user_id} from user {user_id}")
+                    await context.bot.send_document(
+                        chat_id=admin_user_id,
+                        document=update.message.document.file_id,
+                        caption=f"Жаңа PDF чек: ID: {user_id}, Аты: {user_name}",
+                        reply_markup=reply_markup,
+                        protect_content=True
+                    )
+                    logger.info(f"PDF successfully sent to admin {admin_user_id}")
+                elif update.message.document.mime_type and update.message.document.mime_type.startswith('image/'):
+                    logger.info(f"Sending image document to admin {admin_user_id} from user {user_id}")
+                    await context.bot.send_document(
+                        chat_id=admin_user_id,
+                        document=update.message.document.file_id,
+                        caption=f"Жаңа сурет чек: ID: {user_id}, Аты: {user_name}",
+                        reply_markup=reply_markup,
+                        protect_content=True
+                    )
+                    logger.info(f"Image document successfully sent to admin {admin_user_id}")
+
+            admin_notification_success = True
+            logger.info(f"Payment notification sent to admin {admin_user_id} for user {user_id}.")
+        except NetworkError as e_admin_notify:
+            logger.error(f"Network error sending payment notification to admin {admin_user_id} for user {user_id}: {e_admin_notify}", exc_info=True)
+        except Exception as e_notify:
+            logger.error(f"Failed to send payment notification to admin {admin_user_id} for user {user_id}: {e_notify}", exc_info=True)
+
+    # Если не удалось отправить ни одному админу, не сохраняем в базу
+    if not admin_notification_success:
+        logger.error(f"Failed to send payment notification to any admin for user {user_id}")
+        try:
+            await update.message.reply_text("Чекті жіберу кезінде қате орын алды. Қайталап көріңіз.", protect_content=True)
+        except NetworkError as e:
+            logger.error(f"Network error sending failure message to user: {e}", exc_info=True)
+        return
+
+    # Сохраняем в БД только после успешной отправки админу
+    try:
         logger.info(f"Inserting/updating user {user_id} ('{user_name}') with status 'pending' in handle_payment.")
         cur.execute(
             "INSERT INTO users (user_id, username, status) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO UPDATE SET username = %s, status = %s",
@@ -401,65 +489,15 @@ async def handle_payment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Network error sending generic error message in handle_payment: {e_net}", exc_info=True)
         return
 
-    keyboard = [
-        [InlineKeyboardButton("Растау", callback_data=f'approve_{user_id}'),
-         InlineKeyboardButton("Қабылдамау", callback_data=f'reject_{user_id}')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    for admin_user_id in ADMIN_IDS:
+    # Подтверждение отправляем только если это был чек (фото, изображение или PDF)
+    if is_image:
         try:
-            if update.message.photo:
-                await context.bot.send_photo(
-                    chat_id=admin_user_id,
-                    photo=update.message.photo[-1].file_id,
-                    caption=f"Жаңа чек: ID: {user_id}, Аты: {user_name}",
-                    reply_markup=reply_markup,
-                    protect_content=True
-                )
-            elif update.message.document and update.message.document.mime_type == 'application/pdf':
-                await context.bot.send_document(
-                    chat_id=admin_user_id,
-                    document=update.message.document.file_id,
-                    caption=f"Жаңа PDF чек: ID: {user_id}, Аты: {user_name}",
-                    reply_markup=reply_markup,
-                    protect_content=True
-                )
-            else:
-                # Если это текстовое сообщение, не обрабатываем как чек
-                if update.message.text:
-                    logger.info(f"User {user_id} sent text message instead of photo/PDF: {update.message.text}")
-                    try:
-                        await update.message.reply_text(
-                            "⚠️ Сіз тек сурет немесе PDF файл жібере аласыз!\n\n"
-                            "📞 Егер сізге көмек керек болса, қолданыңыз:\n"
-                            "🔸 /admin_khabar сіздің хабарламаңыз\n\n"
-                            "📝 Мысал: /admin_khabar Сабақтар ашылмай тұр",
-                            protect_content=True
-                        )
-                    except NetworkError as e:
-                        logger.error(f"Network error sending text filter message: {e}", exc_info=True)
-                    return  # Не отправляем админу и не сохраняем в базу
-                else:
-                    # Для других типов файлов
-                    await context.bot.send_message(
-                        chat_id=admin_user_id,
-                        text=f"Жаңа файл: ID: {user_id}, Аты: {user_name}",
-                        reply_markup=reply_markup,
-                        protect_content=True
-                    )
-            logger.info(f"Payment notification sent to admin {admin_user_id} for user {user_id}.")
-        except NetworkError as e_admin_notify:
-            logger.error(f"Network error sending payment notification to admin {admin_user_id} for user {user_id}: {e_admin_notify}", exc_info=True)
-        except Exception as e_notify:
-            logger.error(f"Failed to send payment notification to admin {admin_user_id} for user {user_id}: {e_notify}", exc_info=True)
-
-    # Подтверждение отправляем только если это был чек (фото или PDF)
-    if update.message.photo or (update.message.document and update.message.document.mime_type == 'application/pdf'):
-        try:
-            await update.message.reply_text("Чек қабылданды! Төлемді растауды күтіңіз.", protect_content=True)
+            await update.message.reply_text("Чекіңізді әкімші қарап жатқанша күте тұрыңыз.", protect_content=True)
+            logger.info(f"Confirmation sent to user {user_id}: check received and waiting for admin review.")
         except NetworkError as e:
             logger.error(f"Network error sending check received confirmation to user: {e}", exc_info=True)
+    else:
+        logger.info(f"No confirmation sent to user {user_id} - message was not a photo, image or PDF.")
 
 # Обработчик команды /admin
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -624,7 +662,9 @@ async def handle_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE
             logger.info(f"User {user_id} ('{user_name}') approved in DB.")
 
             reply_markup_lessons = create_lesson_keyboard()
-            user_notification_text = f"✅ Төлем расталды! Сабақтарға қол жеткізу ашылды.\\nМерзімі: {expiry_date_val.strftime('%d.%m.%Y')} дейін.\\nТөмендегі сабақтарды таңдаңыз:"
+            user_notification_text = f"""✅ Төлем расталды! Сабақтарға қол жеткізу ашылды.
+Мерзімі: {expiry_date_val.strftime('%d.%m.%Y')} дейін.
+Төмендегі сабақтарды таңдаңыз:"""
             try:
                 await context.bot.send_message(
                     chat_id=user_id,
@@ -884,7 +924,9 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"✅ Төлем расталды! Сабақтарға қол жеткізу ашылды (legacy /approve арқылы).\\nМерзімі: {expiry_date.strftime('%d.%m.%Y')} дейін.\\nТөмендегі сабақтарды таңдаңыз:",
+                text=f"""✅ Төлем расталды! Сабақтарға қол жеткізу ашылды (legacy /approve арқылы).
+Мерзімі: {expiry_date.strftime('%d.%m.%Y')} дейін.
+Төмендегі сабақтарды таңдаңыз:""",
                 reply_markup=reply_markup,
                 protect_content=True
             )
@@ -1129,7 +1171,7 @@ def main():
         application.add_handler(CommandHandler("reply", reply_to_user))
 
         # Обработчик сообщений должен быть в конце, чтобы не перехватывать команды
-        application.add_handler(MessageHandler(filters.PHOTO | filters.Document.PDF, handle_payment))
+        application.add_handler(MessageHandler(filters.PHOTO | filters.Document.PDF | filters.Document.IMAGE, handle_payment))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_payment))
         
         # Существующие обработчики
