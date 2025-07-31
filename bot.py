@@ -236,16 +236,37 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Если у нас уже есть file_id от предыдущей отправки, используем его
             if VIDEO_FILE_ID:
                 logger.info(f"Using cached video file_id: {VIDEO_FILE_ID}")
-                await context.bot.send_video(
-                    chat_id=query.from_user.id,
-                    video=VIDEO_FILE_ID,
-                    caption=None,  # Без подписи
-                    reply_markup=reply_markup,
-                    read_timeout=120,  # Увеличенный таймаут
-                    write_timeout=120,  # Увеличенный таймаут
-                    connect_timeout=120,  # Увеличенный таймаут
-                    protect_content=True
-                )
+                try:
+                    await context.bot.send_video(
+                        chat_id=query.from_user.id,
+                        video=VIDEO_FILE_ID,
+                        caption=None,  # Без подписи
+                        reply_markup=reply_markup,
+                        read_timeout=120,  # Увеличенный таймаут
+                        write_timeout=120,  # Увеличенный таймаут
+                        connect_timeout=120,  # Увеличенный таймаут
+                        protect_content=True
+                    )
+                except Exception as e_file_id:
+                    # Если file_id недействителен, отправляем с диска
+                    logger.warning(f"Cached file_id failed: {e_file_id}. Sending from disk.")
+                    VIDEO_FILE_ID = None  # Сбрасываем недействительный file_id
+
+                    with open(video_path, 'rb') as video_file:
+                        message = await context.bot.send_video(
+                            chat_id=query.from_user.id,
+                            video=video_file,
+                            caption=None,  # Без подписи
+                            reply_markup=reply_markup,
+                            read_timeout=120,  # Увеличенный таймаут
+                            write_timeout=120,  # Увеличенный таймаут
+                            connect_timeout=120,  # Увеличенный таймаут
+                            protect_content=True
+                        )
+                        # Сохраняем новый file_id
+                        VIDEO_FILE_ID = message.video.file_id
+                        logger.info(f"Saved new video file_id: {VIDEO_FILE_ID}")
+                        save_video_file_id(VIDEO_FILE_ID)
             else:
                 # Отправляем видео с диска и сохраняем file_id для будущего использования
                 with open(video_path, 'rb') as video_file:
